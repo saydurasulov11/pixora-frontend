@@ -10,7 +10,6 @@ import {
  * To'liq mustaqil, serversiz ijtimoiy tarmoq ilovasi.
  */
 
-// ---------- Ranglar va shrift ----------
 const C = {
   bg: "#0d0e12",
   card: "#17181d",
@@ -26,12 +25,9 @@ const AVATAR_COLORS = ["#ff3d6e", "#3ddbff", "#ffb84d", "#8b6bff", "#4dd48a", "#
 const STORAGE_PREFIX = "sardogram_";
 const key = (name) => `${STORAGE_PREFIX}${name}`;
 
-// Faqat shu nikliklar avtomatik tasdiqlash belgisini oladi
 const VERIFIED_ALLOWED = ["sardor", "davlat", "shuxrat"];
-// Parol tizimi joriy qilingani uchun bir martalik migratsiya kaliti
-const MIGRATION_KEY = key("migrated_password_v2");
+const MIGRATION_KEY = key("migrated_password_v3");
 
-// ---------- Stil yordamchilari ----------
 const inputStyle = {
   width: "100%",
   padding: "12px 14px",
@@ -77,7 +73,6 @@ function followBtnStyle(isFollowing) {
   };
 }
 
-// ---------- Yordamchi funksiyalar ----------
 function readLS(name, fallback) {
   try {
     const raw = localStorage.getItem(key(name));
@@ -111,7 +106,6 @@ function findUserKey(usersObj, name) {
   return Object.keys(usersObj).find((u) => u.toLowerCase() === name.toLowerCase());
 }
 
-// ---------- Kichik komponentlar ----------
 function NameTag({ name, verified, size = 14 }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
@@ -161,7 +155,6 @@ function EmptyState({ text }) {
   );
 }
 
-// ---------- Asosiy komponent ----------
 export default function Sardogram() {
   const [booting, setBooting] = useState(true);
   const [me, setMe] = useState(null);
@@ -175,7 +168,6 @@ export default function Sardogram() {
   const [tab, setTab] = useState("feed");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Auth holati
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -183,7 +175,6 @@ export default function Sardogram() {
   const [authAvatar, setAuthAvatar] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // Post/Reel yaratish modal/oynalari
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [draftMedia, setDraftMedia] = useState("");
@@ -196,12 +187,10 @@ export default function Sardogram() {
   const [commentDrafts, setCommentDrafts] = useState({});
   const [openComments, setOpenComments] = useState({});
 
-  // DM
   const [dmTarget, setDmTarget] = useState(null);
   const [messageDraft, setMessageDraft] = useState("");
   const chatEndRef = useRef(null);
 
-  // ---------- Boshlang'ich yuklash ----------
   useEffect(() => {
     const alreadyMigrated = localStorage.getItem(MIGRATION_KEY);
     if (!alreadyMigrated) {
@@ -226,7 +215,6 @@ export default function Sardogram() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [dms, dmTarget]);
 
-  // ---------- Persist funksiyalar ----------
   const persistPosts = useCallback((next) => { setPosts(next); writeLS("posts", next); }, []);
   const persistReels = useCallback((next) => { setReels(next); writeLS("reels", next); }, []);
   const persistUsers = useCallback((next) => { setUsers(next); writeLS("users", next); }, []);
@@ -239,7 +227,6 @@ export default function Sardogram() {
     persistNotifs([item, ...notifications]);
   };
 
-  // ---------- Auth ----------
   const submitAuth = () => {
     const name = authName.trim();
     const password = authPassword;
@@ -296,7 +283,6 @@ export default function Sardogram() {
     localStorage.removeItem(key("me"));
   };
 
-  // ---------- Media yuklash ----------
   const handleDraftFile = async (e, isVideo) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -311,7 +297,6 @@ export default function Sardogram() {
     setReelMedia(dataUrl);
   };
 
-  // ---------- Post / Reel / Like / Comment ----------
   const submitPost = () => {
     if ((!draftText.trim() && !draftMedia) || !me) return;
     const newPost = {
@@ -390,7 +375,6 @@ export default function Sardogram() {
     setMessageDraft("");
   };
 
-  // ---------- Yuklanish holati ----------
   if (booting) {
     return (
       <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -400,7 +384,6 @@ export default function Sardogram() {
     );
   }
 
-  // ---------- Kirish / Ro'yxatdan o'tish ekrani ----------
   if (!me) {
     return (
       <div style={{
@@ -509,19 +492,18 @@ export default function Sardogram() {
     );
   }
 
-  // ---------- Hisoblangan qiymatlar ----------
   const storyUsers = Object.entries(users);
   const otherUsers = Object.keys(users).filter((u) => u !== me.username);
-  const filteredUsers = Object.entries(users).filter(([u]) => u.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredUsers = Object.entries(users).filter(([u]) =>
+    u.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
   const conversationPreview = (otherUser) => {
     const thread = dms[convoKey(me.username, otherUser)] || [];
     return thread[thread.length - 1];
   };
 
-  // ---------- Asosiy interfeys ----------
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.ink, fontFamily: FONT }}>
-      {/* Header */}
       <div style={{
         position: "sticky", top: 0, zIndex: 5, background: "rgba(13,14,18,0.9)",
         backdropFilter: "blur(14px)", borderBottom: `1px solid ${C.border}`,
@@ -556,7 +538,6 @@ export default function Sardogram() {
       </div>
 
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 76 }}>
-        {/* LENTA */}
         {tab === "feed" && (
           <>
             <div style={{ display: "flex", gap: 14, padding: "14px 16px", overflowX: "auto", borderBottom: `1px solid ${C.border}` }}>
@@ -643,7 +624,6 @@ export default function Sardogram() {
           </>
         )}
 
-        {/* QIDIRUV */}
         {tab === "search" && (
           <div style={{ padding: 16 }}>
             <div style={{ position: "relative", marginBottom: 16 }}>
@@ -651,7 +631,7 @@ export default function Sardogram() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Akkauntlarni qidirish..."
+                placeholder="Qidirish..."
                 style={{ ...inputStyle, marginBottom: 0, padding: "10px 10px 10px 38px" }}
               />
             </div>
@@ -681,7 +661,6 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* REELS */}
         {tab === "reels" && (
           <div style={{ padding: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -717,7 +696,6 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* GRID / MENING POSTLARIM */}
         {tab === "grid" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, padding: 2 }}>
             {posts.filter((p) => p.media).map((p) => (
@@ -733,7 +711,6 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* XABARLAR */}
         {tab === "messages" && (
           <div style={{ padding: 16 }}>
             {!dmTarget ? (
@@ -799,7 +776,6 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* BILDIRISHNOMALAR */}
         {tab === "notifs" && (
           <div style={{ padding: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>Bildirishnomalar</h2>
@@ -816,7 +792,6 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* PROFIL */}
         {tab === "profile" && (
           <div style={{ padding: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
@@ -844,7 +819,6 @@ export default function Sardogram() {
         )}
       </div>
 
-      {/* PASTKI NAVIGATSIYA */}
       <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 5,
         background: "rgba(13,14,18,0.95)", backdropFilter: "blur(14px)",
@@ -859,7 +833,6 @@ export default function Sardogram() {
         <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
       </div>
 
-      {/* POST YARATISH MODALI */}
       {composerOpen && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
@@ -916,7 +889,6 @@ export default function Sardogram() {
         </div>
       )}
 
-      {/* REEL YARATISH MODALI */}
       {reelComposerOpen && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
@@ -939,7 +911,7 @@ export default function Sardogram() {
               <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000" }}>
                 <video src={reelMedia} style={{ width: "100%", maxHeight: 200, display: "block" }} controls />
                 <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <X size5={16} />
+                  <X size={16} />
                 </button>
               </div>
             )}
