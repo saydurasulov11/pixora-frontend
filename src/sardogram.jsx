@@ -34,6 +34,11 @@ const VERIFIED_USERNAMES = ["shuxrat", "davlat", "sardor", "saydurasulov", "xasa
 function isVerified(username) {
   return VERIFIED_USERNAMES.includes((username || "").trim().toLowerCase());
 }
+// Faqat shu foydalanuvchi admin panelga (bazani tozalash) kira oladi.
+const ADMIN_USERNAME = "sardor";
+function isAdmin(username) {
+  return (username || "").trim().toLowerCase() === ADMIN_USERNAME;
+}
 
 // ---------- Ranglar va shrift ----------
 const C = {
@@ -853,7 +858,7 @@ export default function Sardogram() {
                 </div>
               ))}
             </div>
-            {isVerified(me.username) && (
+            {isAdmin(me.username) && (
               <button onClick={resetEverything} style={{ width: "100%", background: "#2a0f14", border: "1px solid #5a1a24", color: "#ff6b81", borderRadius: 8, padding: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Trash2 size={14} /> Admin: barcha ma'lumotlarni tozalash
               </button>
