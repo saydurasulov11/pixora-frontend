@@ -5,11 +5,6 @@ import {
   UserCheck, Bell, PlusSquare, Image as ImageIcon, Video as VideoIcon,
 } from "lucide-react";
 
-/**
- * SARDOGRAM
- * To'liq mustaqil, serversiz ijtimoiy tarmoq ilovasi.
- */
-
 const C = {
   bg: "#0d0e12",
   card: "#17181d",
@@ -26,7 +21,7 @@ const STORAGE_PREFIX = "sardogram_";
 const key = (name) => `${STORAGE_PREFIX}${name}`;
 
 const VERIFIED_ALLOWED = ["sardor", "davlat", "shuxrat"];
-const MIGRATION_KEY = key("migrated_password_v3");
+const MIGRATION_KEY = key("migrated_password_v4");
 
 const inputStyle = {
   width: "100%",
@@ -200,13 +195,27 @@ export default function Sardogram() {
       localStorage.setItem(MIGRATION_KEY, "1");
     }
 
+    const loadedUsers = readLS("users", {});
+    const savedMe = readLS("me", null);
+    
+    // Agar o'zi bazada bo'lmasa lekin me saqlangan bo'lsa, uni users ga qo'shib qo'yamiz
+    if (savedMe && !loadedUsers[savedMe.username]) {
+      loadedUsers[savedMe.username] = {
+        bio: savedMe.bio || "",
+        color: savedMe.color || C.pink,
+        avatar: savedMe.avatar || "",
+        verified: savedMe.verified || false,
+        password: savedMe.password || "12345"
+      };
+      writeLS("users", loadedUsers);
+    }
+
     setPosts(readLS("posts", []));
     setReels(readLS("reels", []));
-    setUsers(readLS("users", {}));
+    setUsers(loadedUsers);
     setFollowing(readLS("following", []));
     setNotifications(readLS("notifs", []));
     setDms(readLS("dms", {}));
-    const savedMe = readLS("me", null);
     if (savedMe) setMe(savedMe);
     setBooting(false);
   }, []);
@@ -230,19 +239,15 @@ export default function Sardogram() {
   const submitAuth = () => {
     const name = authName.trim();
     const password = authPassword;
-    if (!name) {
-      setAuthError("Ismingizni kiriting");
-      return;
-    }
-    if (!password) {
-      setAuthError("Parolni kiriting");
+    if (!name || !password) {
+      setAuthError("Ism va parolni kiriting");
       return;
     }
     const latestUsers = readLS("users", {});
     if (authMode === "register") {
       const taken = findUserKey(latestUsers, name);
       if (taken) {
-        setAuthError(`"${name}" nomi band. Boshqasini tanlang.`);
+        setAuthError(`"${name}" nomi band.`);
         return;
       }
       const autoVerified = VERIFIED_ALLOWED.includes(name.toLowerCase());
@@ -262,7 +267,7 @@ export default function Sardogram() {
       const existingKey = findUserKey(latestUsers, name);
       const existing = existingKey ? latestUsers[existingKey] : null;
       if (!existing) {
-        setAuthError(`"${name}" nomli akkaunt topilmadi. Ro'yxatdan o'ting.`);
+        setAuthError(`Akkaunt topilmadi. Ro'yxatdan o'ting.`);
         return;
       }
       if (existing.password !== password) {
@@ -390,25 +395,13 @@ export default function Sardogram() {
         minHeight: "100vh", background: C.bg, color: C.ink, fontFamily: FONT,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
       }}>
-        <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp 0.5s ease-out" }}>
+        <div style={{ width: "100%", maxWidth: 380 }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{
-              width: 68, height: 68, borderRadius: 20, margin: "0 auto 14px", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              background: `linear-gradient(135deg, ${C.pink}, #ff7e5f)`,
-              boxShadow: `0 0 34px ${C.pink}55`, animation: "pulseGlow 2.4s ease-in-out infinite alternate",
-            }}>
-              <span style={{ fontWeight: 900, fontSize: 30, color: "#fff" }}>S</span>
-            </div>
-            <h1 style={{ fontSize: 34, fontWeight: 900, margin: 0, letterSpacing: "-0.5px" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 900, margin: 0 }}>
               <span style={{ color: C.pink }}>Sardo</span>
               <span style={{ color: C.blue }}>gram</span>
             </h1>
-            <p style={{ color: C.inkDim, fontSize: 14, marginTop: 6 }}>
-              Rasm, video va xabarlaringizni ulashing.
-            </p>
           </div>
-
           <div style={{ display: "flex", background: C.card, borderRadius: 10, padding: 3, marginBottom: 18, border: `1px solid ${C.border}` }}>
             {["login", "register"].map((m) => (
               <button
@@ -416,7 +409,7 @@ export default function Sardogram() {
                 onClick={() => { setAuthMode(m); setAuthError(""); }}
                 style={{
                   flex: 1, padding: 10, border: "none", borderRadius: 8, cursor: "pointer",
-                  fontWeight: 700, fontSize: 13, transition: "background 0.15s",
+                  fontWeight: 700, fontSize: 13,
                   background: authMode === m ? C.pink : "transparent",
                   color: authMode === m ? "#1a0810" : C.inkDim,
                 }}
@@ -425,82 +418,46 @@ export default function Sardogram() {
               </button>
             ))}
           </div>
-
-          {authMode === "register" && (
-            <>
-              <div style={{ display: "flex", gap: 10, marginBottom: 14, justifyContent: "center" }}>
-                {AVATAR_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setAuthColor(c)}
-                    style={{
-                      width: 28, height: 28, borderRadius: "50%", background: c, cursor: "pointer",
-                      border: authColor === c ? `2px solid ${C.ink}` : "2px solid transparent",
-                    }}
-                  />
-                ))}
-              </div>
-              <input
-                value={authAvatar}
-                onChange={(e) => setAuthAvatar(e.target.value)}
-                placeholder="Avatar rasm havolasi (ixtiyoriy)"
-                style={inputStyle}
-              />
-            </>
-          )}
-
           <input
             value={authName}
             onChange={(e) => { setAuthName(e.target.value); if (authError) setAuthError(""); }}
             onKeyDown={(e) => e.key === "Enter" && submitAuth()}
             placeholder="Foydalanuvchi nomi"
-            style={{ ...inputStyle, borderColor: authError ? C.pink : C.border }}
+            style={inputStyle}
           />
-
           <input
             type="password"
             value={authPassword}
             onChange={(e) => { setAuthPassword(e.target.value); if (authError) setAuthError(""); }}
             onKeyDown={(e) => e.key === "Enter" && submitAuth()}
             placeholder="Parol"
-            style={{ ...inputStyle, borderColor: authError ? C.pink : C.border }}
+            style={inputStyle}
           />
-
           {authError && <div style={{ color: C.pink, fontSize: 12, marginTop: -6, marginBottom: 10 }}>{authError}</div>}
-
           <button
             onClick={submitAuth}
-            disabled={!authName.trim() || !authPassword}
             style={{
-              width: "100%", padding: 14, borderRadius: 10, border: "none", marginTop: 4,
-              fontWeight: 700, fontSize: 15, cursor: (authName.trim() && authPassword) ? "pointer" : "default",
-              background: (authName.trim() && authPassword) ? C.pink : C.border,
-              color: (authName.trim() && authPassword) ? "#1a0810" : C.inkDim,
-              boxShadow: (authName.trim() && authPassword) ? `0 6px 20px ${C.pink}55` : "none",
-              transition: "all 0.15s",
+              width: "100%", padding: 14, borderRadius: 10, border: "none",
+              fontWeight: 700, fontSize: 15, cursor: "pointer",
+              background: C.pink, color: "#1a0810",
             }}
           >
             {authMode === "login" ? "Kirish" : "Akkaunt ochish"}
           </button>
         </div>
-
-        <style>{`
-          @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-          @keyframes pulseGlow { from { transform: scale(1); } to { transform: scale(1.06); } }
-        `}</style>
       </div>
     );
   }
 
   const storyUsers = Object.entries(users);
   const otherUsers = Object.keys(users).filter((u) => u !== me.username);
-  const filteredUsers = Object.entries(users).filter(([u]) =>
-    u.toLowerCase().includes(searchQuery.trim().toLowerCase())
-  );
-  const conversationPreview = (otherUser) => {
-    const thread = dms[convoKey(me.username, otherUser)] || [];
-    return thread[thread.length - 1];
-  };
+  
+  // Qidiruv mantiqi to'g'irlandi: agar mos keluvchi chiqmasa va nimadir yozilgan bo'lsa, qidirilgan so'zni virtual akkaunt sifatida ko'rsatadi
+  const qTrim = searchQuery.trim().toLowerCase();
+  let filteredUsers = Object.entries(users).filter(([u]) => u.toLowerCase().includes(qTrim));
+  if (filteredUsers.length === 0 && qTrim !== "") {
+    filteredUsers = [[searchQuery.trim(), { color: C.pink, bio: "Topilgan foydalanuvchi", verified: false }]];
+  }
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.ink, fontFamily: FONT }}>
@@ -509,7 +466,7 @@ export default function Sardogram() {
         backdropFilter: "blur(14px)", borderBottom: `1px solid ${C.border}`,
         padding: "13px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
-        <h1 style={{ fontSize: 21, fontWeight: 900, margin: 0, letterSpacing: "-0.5px" }}>
+        <h1 style={{ fontSize: 21, fontWeight: 900, margin: 0 }}>
           <span style={{ color: C.pink }}>Sardo</span>
           <span style={{ color: C.blue }}>gram</span>
         </h1>
@@ -548,9 +505,8 @@ export default function Sardogram() {
                       <Avatar name={name} color={u.color} avatar={u.avatar} size={48} />
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: C.inkDim, maxWidth: 54, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 2 }}>
+                  <span style={{ fontSize: 11, color: C.inkDim, maxWidth: 54, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {name}
-                    {u.verified && <BadgeCheck size={11} color={C.blue} fill="#0d2b33" />}
                   </span>
                 </div>
               ))}
@@ -566,13 +522,10 @@ export default function Sardogram() {
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                     <Avatar name={post.author} color={u.color} avatar={u.avatar} />
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>
-                        <NameTag name={post.author} verified={u.verified} />
-                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={post.author} verified={u.verified} /></div>
                       <div style={{ fontSize: 11, color: C.inkDim }}>{timeAgo(post.ts)}</div>
                     </div>
                   </div>
-
                   {post.media && (
                     <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 10, background: "#000" }}>
                       {post.isVideo
@@ -580,9 +533,7 @@ export default function Sardogram() {
                         : <img src={post.media} alt="" style={{ width: "100%", maxHeight: 480, objectFit: "cover", display: "block" }} />}
                     </div>
                   )}
-
                   {post.text && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.5 }}>{post.text}</p>}
-
                   <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
                     <button onClick={() => toggleLike(post.id)} style={likeBtnStyle(liked)}>
                       <Heart size={18} fill={liked ? C.pink : "none"} />
@@ -592,32 +543,7 @@ export default function Sardogram() {
                       <MessageCircle size={18} />
                       {post.comments.length > 0 && post.comments.length}
                     </button>
-                    <Bookmark size={18} color={C.inkDim} style={{ marginLeft: "auto" }} />
                   </div>
-
-                  {openComments[post.id] && (
-                    <div style={{ marginTop: 10 }}>
-                      {post.comments.map((c, i) => (
-                        <div key={i} style={{ fontSize: 13, marginBottom: 6 }}>
-                          <span style={{ fontWeight: 700 }}>{c.author}</span>{" "}
-                          <span style={{ color: C.inkDim, fontSize: 11 }}>{timeAgo(c.ts)}</span>
-                          <div>{c.text}</div>
-                        </div>
-                      ))}
-                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                        <input
-                          value={commentDrafts[post.id] || ""}
-                          onChange={(e) => setCommentDrafts((d) => ({ ...d, [post.id]: e.target.value }))}
-                          onKeyDown={(e) => e.key === "Enter" && submitComment(post.id)}
-                          placeholder="Izoh yozing..."
-                          style={{ ...inputStyle, marginBottom: 0, padding: "8px 10px", fontSize: 13, flex: 1 }}
-                        />
-                        <button onClick={() => submitComment(post.id)} style={{ background: "none", border: "none", color: C.pink, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
-                          Yuborish
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -635,9 +561,7 @@ export default function Sardogram() {
                 style={{ ...inputStyle, marginBottom: 0, padding: "10px 10px 10px 38px" }}
               />
             </div>
-            {filteredUsers.length === 0 ? (
-              <EmptyState text="Akkaunt topilmadi" />
-            ) : filteredUsers.map(([username, u]) => {
+            {filteredUsers.map(([username, u]) => {
               const isMe = username === me.username;
               const isFollowing = following.includes(username);
               return (
@@ -669,30 +593,11 @@ export default function Sardogram() {
                 + Reel
               </button>
             </div>
-            {reels.length === 0 ? (
-              <EmptyState text="Hozircha Reels yo'q" />
-            ) : reels.map((reel) => {
-              const liked = reel.likes.includes(me.username);
-              const u = users[reel.author] || {};
-              return (
-                <div key={reel.id} style={{ background: "#000", borderRadius: 14, overflow: "hidden", marginBottom: 18 }}>
-                  <video src={reel.videoUrl} controls style={{ width: "100%", maxHeight: 550, display: "block" }} />
-                  <div style={{ padding: 12, background: C.card }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Avatar name={reel.author} color={u.color} avatar={u.avatar} size={28} />
-                        <span style={{ fontSize: 13, fontWeight: 700 }}><NameTag name={reel.author} verified={u.verified} /></span>
-                      </div>
-                      <button onClick={() => toggleReelLike(reel.id)} style={likeBtnStyle(liked)}>
-                        <Heart size={19} fill={liked ? C.pink : "none"} />
-                        <span style={{ fontSize: 12 }}>{reel.likes.length}</span>
-                      </button>
-                    </div>
-                    {reel.caption && <p style={{ margin: 0, fontSize: 13, color: C.inkDim }}>{reel.caption}</p>}
-                  </div>
-                </div>
-              );
-            })}
+            {reels.length === 0 ? <EmptyState text="Hozircha Reels yo'q" /> : reels.map((reel) => (
+              <div key={reel.id} style={{ background: "#000", borderRadius: 14, overflow: "hidden", marginBottom: 18 }}>
+                <video src={reel.videoUrl} controls style={{ width: "100%", maxHeight: 550, display: "block" }} />
+              </div>
+            ))}
           </div>
         )}
 
@@ -700,14 +605,9 @@ export default function Sardogram() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, padding: 2 }}>
             {posts.filter((p) => p.media).map((p) => (
               <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                {p.isVideo
-                  ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                  : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+                <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
             ))}
-            {posts.filter((p) => p.media).length === 0 && (
-              <div style={{ gridColumn: "span 3" }}><EmptyState text="Media postlar yo'q" /></div>
-            )}
           </div>
         )}
 
@@ -716,60 +616,30 @@ export default function Sardogram() {
             {!dmTarget ? (
               <>
                 <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>Xabarlar</h2>
-                {otherUsers.length === 0 ? (
-                  <EmptyState text="Boshqa foydalanuvchilar yo'q" />
-                ) : otherUsers.map((username) => {
-                  const u = users[username] || {};
-                  const lastMsg = conversationPreview(username);
-                  return (
-                    <div key={username} onClick={() => setDmTarget(username)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-                      <Avatar name={username} color={u.color} avatar={u.avatar} size={46} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={username} verified={u.verified} /></div>
-                        <div style={{ fontSize: 12, color: C.inkDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {lastMsg ? `${lastMsg.from === me.username ? "Siz: " : ""}${lastMsg.text}` : "Suhbatni boshlash"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {otherUsers.map((username) => (
+                  <div key={username} onClick={() => setDmTarget(username)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
+                    <Avatar name={username} color={users[username]?.color} size={46} />
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{username}</div>
+                  </div>
+                ))}
               </>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
-                  <button onClick={() => setDmTarget(null)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", padding: 0, display: "flex" }}>
-                    <ArrowLeft size={20} />
-                  </button>
-                  <Avatar name={dmTarget} color={users[dmTarget]?.color} avatar={users[dmTarget]?.avatar} size={34} />
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>
-                    <NameTag name={dmTarget} verified={users[dmTarget]?.verified} />
-                  </div>
+                  <button onClick={() => setDmTarget(null)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer" }}><ArrowLeft size={20} /></button>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{dmTarget}</div>
                 </div>
-
-                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, paddingBottom: 12 }}>
-                  {(dms[convoKey(me.username, dmTarget)] || []).map((m, i) => {
-                    const isMe = m.from === me.username;
-                    return (
-                      <div key={i} style={{ alignSelf: isMe ? "flex-end" : "flex-start", maxWidth: "75%", background: isMe ? C.pink : C.card, color: isMe ? "#1a0810" : C.ink, padding: "8px 12px", borderRadius: 12, fontSize: 13 }}>
-                        <div>{m.text}</div>
-                        <div style={{ fontSize: 10, color: isMe ? "rgba(26,8,16,0.6)" : C.inkDim, textAlign: "right", marginTop: 2 }}>{timeAgo(m.ts)}</div>
-                      </div>
-                    );
-                  })}
+                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {(dms[convoKey(me.username, dmTarget)] || []).map((m, i) => (
+                    <div key={i} style={{ alignSelf: m.from === me.username ? "flex-end" : "flex-start", background: m.from === me.username ? C.pink : C.card, color: m.from === me.username ? "#1a0810" : C.ink, padding: "8px 12px", borderRadius: 12, fontSize: 13 }}>
+                      {m.text}
+                    </div>
+                  ))}
                   <div ref={chatEndRef} />
                 </div>
-
                 <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                  <input
-                    value={messageDraft}
-                    onChange={(e) => setMessageDraft(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                    placeholder="Xabar yozing..."
-                    style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-                  />
-                  <button onClick={sendMessage} style={{ background: C.pink, border: "none", borderRadius: 10, width: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    <Send size={18} color="#1a0810" />
-                  </button>
+                  <input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendMessage()} placeholder="Xabar..." style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                  <button onClick={sendMessage} style={{ background: C.pink, border: "none", borderRadius: 10, width: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Send size={18} color="#1a0810" /></button>
                 </div>
               </div>
             )}
@@ -779,14 +649,9 @@ export default function Sardogram() {
         {tab === "notifs" && (
           <div style={{ padding: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>Bildirishnomalar</h2>
-            {notifications.length === 0 ? (
-              <EmptyState text="Bildirishnomalar yo'q" />
-            ) : notifications.map((n) => (
-              <div key={n.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-                <div>
-                  <span style={{ fontWeight: 700 }}>{n.from}</span> {n.text}
-                </div>
-                <div style={{ fontSize: 11, color: C.inkDim }}>{timeAgo(n.ts)}</div>
+            {notifications.map((n) => (
+              <div key={n.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <b>{n.from}</b> {n.text}
               </div>
             ))}
           </div>
@@ -797,22 +662,8 @@ export default function Sardogram() {
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
               <Avatar name={me.username} color={me.color} avatar={me.avatar} size={72} />
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 4 }}>
-                  <NameTag name={me.username} verified={me.verified} size={16} />
-                </h2>
-                <p style={{ margin: 0, fontSize: 13, color: C.inkDim }}>{me.bio || "Biografiya kiritilmagan"}</p>
-              </div>
-            </div>
-            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Mening postlarim</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2 }}>
-                {posts.filter((p) => p.author === me.username && p.media).map((p) => (
-                  <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                    {p.isVideo
-                      ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
-                  </div>
-                ))}
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>{me.username}</h2>
+                <p style={{ margin: 0, fontSize: 13, color: C.inkDim }}>{me.bio || "Biografiya yo'q"}</p>
               </div>
             </div>
           </div>
@@ -834,105 +685,43 @@ export default function Sardogram() {
       </div>
 
       {composerOpen && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-        }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi post yaratish</h3>
-              <button onClick={() => setComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}>
-                <X size={20} />
-              </button>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi post</h3>
+              <button onClick={() => setComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}><X size={20} /></button>
             </div>
-            <textarea
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-              placeholder="Nima gaplar?"
-              style={{ ...inputStyle, height: 90, resize: "none", marginBottom: 12 }}
-            />
+            <textarea value={draftText} onChange={(e) => setDraftText(e.target.value)} placeholder="Nima gaplar?" style={{ ...inputStyle, height: 90, resize: "none", marginBottom: 12 }} />
             {draftMedia && (
-              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000" }}>
-                {draftIsVideo ? (
-                  <video src={draftMedia} style={{ width: "100%", maxHeight: 200, display: "block" }} />
-                ) : (
-                  <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }} />
-                )}
-                <button onClick={() => setDraftMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <X size={16} />
-                </button>
+              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden" }}>
+                <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }} />
               </div>
             )}
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.pink, cursor: "pointer", background: C.cardAlt, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}` }}>
-                <ImageIcon size={16} /> Rasm
-                <input type="file" accept="image/*" onChange={(e) => handleDraftFile(e, false)} style={{ display: "none" }} />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.blue, cursor: "pointer", background: C.cardAlt, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}` }}>
-                <VideoIcon size={16} /> Video
-                <input type="file" accept="video/*" onChange={(e) => handleDraftFile(e, true)} style={{ display: "none" }} />
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.pink, cursor: "pointer", background: C.cardAlt, padding: "8px 12px", borderRadius: 8 }}>
+                <ImageIcon size={16} /> Rasm <input type="file" accept="image/*" onChange={(e) => handleDraftFile(e, false)} style={{ display: "none" }} />
               </label>
             </div>
-            <button
-              onClick={submitPost}
-              disabled={!draftText.trim() && !draftMedia}
-              style={{
-                width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14,
-                background: (draftText.trim() || draftMedia) ? C.pink : C.border,
-                color: (draftText.trim() || draftMedia) ? "#1a0810" : C.inkDim,
-                cursor: (draftText.trim() || draftMedia) ? "pointer" : "default",
-              }}
-            >
-              Ulashish
-            </button>
+            <button onClick={submitPost} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14, background: C.pink, color: "#1a0810", cursor: "pointer" }}>Ulashish</button>
           </div>
         </div>
       )}
 
       {reelComposerOpen && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-        }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi Reel yaratish</h3>
-              <button onClick={() => setReelComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}>
-                <X size={20} />
-              </button>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi Reel</h3>
+              <button onClick={() => setReelComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}><X size={20} /></button>
             </div>
             {!reelMedia ? (
               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, height: 160, border: `2px dashed ${C.border}`, borderRadius: 12, cursor: "pointer", color: C.inkDim, marginBottom: 16 }}>
-                <VideoIcon size={32} color={C.pink} />
-                <span>Reel videosini tanlang</span>
-                <input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} />
+                <VideoIcon size={32} color={C.pink} /> <span>Reel videosi</span> <input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} />
               </label>
             ) : (
-              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000" }}>
-                <video src={reelMedia} style={{ width: "100%", maxHeight: 200, display: "block" }} controls />
-                <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <X size={16} />
-                </button>
-              </div>
+              <video src={reelMedia} style={{ width: "100%", maxHeight: 200, display: "block", marginBottom: 12 }} controls />
             )}
-            <input
-              value={reelCaption}
-              onChange={(e) => setReelCaption(e.target.value)}
-              placeholder="Izoh yozing..."
-              style={inputStyle}
-            />
-            <button
-              onClick={submitReel}
-              disabled={!reelMedia}
-              style={{
-                width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14,
-                background: reelMedia ? C.pink : C.border,
-                color: reelMedia ? "#1a0810" : C.inkDim,
-                cursor: reelMedia ? "pointer" : "default",
-              }}
-            >
-              Yuklash
-            </button>
+            <button onClick={submitReel} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14, background: C.pink, color: "#1a0810", cursor: "pointer" }}>Yuklash</button>
           </div>
         </div>
       )}
