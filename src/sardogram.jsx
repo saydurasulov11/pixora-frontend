@@ -4,7 +4,7 @@ import {
   MessagesSquare, ArrowLeft, BadgeCheck, Search, Clapperboard, UserPlus,
   UserCheck, Bell, PlusSquare, Image as ImageIcon, Video as VideoIcon,
   Check, CheckCheck, Plus, Volume2, VolumeX, Phone, PhoneOff, Users,
-  Palette, Trash2, Mic, MicOff, VideoOff,
+  Palette, Trash2, Mic, MicOff, VideoOff, Eye, Lock,
 } from "lucide-react";
 
 /**
@@ -127,6 +127,7 @@ export default function Sardogram() {
 
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authColor, setAuthColor] = useState(AVATAR_COLORS[0]);
   const [authAvatar, setAuthAvatar] = useState("");
   const [authError, setAuthError] = useState("");
@@ -322,7 +323,10 @@ export default function Sardogram() {
   // -------------------- Auth --------------------
   const submitAuth = async () => {
     const name = authName.trim();
+    const pass = authPassword;
     if (!name) { setAuthError("Ismingizni kiriting"); return; }
+    if (!pass) { setAuthError("Parolingizni kiriting"); return; }
+    if (authMode === "register" && pass.length < 4) { setAuthError("Parol kamida 4 ta belgidan iborat bo'lsin"); return; }
     setAuthBusy(true);
     try {
       let existing = users[name];
@@ -332,16 +336,18 @@ export default function Sardogram() {
       }
       if (authMode === "register") {
         if (existing) { setAuthError(`"${name}" nomi band. Boshqasini tanlang.`); setAuthBusy(false); return; }
-        const profile = { bio: "", color: authColor, avatar: authAvatar.trim(), createdAt: Date.now() };
+        const profile = { bio: "", color: authColor, avatar: authAvatar.trim(), password: pass, createdAt: Date.now() };
         await writeUser(name, profile);
         const meProfile = { username: name, ...profile };
         setMe(meProfile); writeLS("me", meProfile);
       } else {
         if (!existing) { setAuthError(`"${name}" nomli akkaunt topilmadi.`); setAuthBusy(false); return; }
+        if ((existing.password || "") !== pass) { setAuthError("Parol noto'g'ri."); setAuthBusy(false); return; }
         const meProfile = { username: name, ...existing };
         setMe(meProfile); writeLS("me", meProfile);
       }
       setAuthError("");
+      setAuthPassword("");
     } catch (e) { setAuthError("Xatolik yuz berdi, qayta urinib ko'ring."); }
     setAuthBusy(false);
   };
@@ -360,8 +366,14 @@ export default function Sardogram() {
   };
   const submitReel = async () => {
     if (!reelMedia || !me) return;
-    await addReel({ author: me.username, videoUrl: reelMedia, caption: reelCaption.trim(), ts: Date.now(), likes: [] });
+    await addReel({ author: me.username, videoUrl: reelMedia, caption: reelCaption.trim(), ts: Date.now(), likes: [], views: [] });
     setReelMedia(""); setReelCaption(""); setReelComposerOpen(false);
+  };
+  const registerReelView = async (reel) => {
+    if (!me) return;
+    const seen = reel.views || [];
+    if (seen.includes(me.username)) return;
+    await updateReel(reel.id, { views: [...seen, me.username] });
   };
   const submitStory = async () => {
     if (!storyMedia || !me) return;
@@ -547,7 +559,7 @@ export default function Sardogram() {
 
           <div style={{ display: "flex", background: C.card, borderRadius: 10, padding: 3, marginBottom: 18, border: `1px solid ${C.border}` }}>
             {["login", "register"].map((m) => (
-              <button key={m} onClick={() => { setAuthMode(m); setAuthError(""); }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, background: authMode === m ? C.pink : "transparent", color: authMode === m ? "#1a0810" : C.inkDim }}>
+              <button key={m} onClick={() => { setAuthMode(m); setAuthError(""); setAuthPassword(""); }} style={{ flex: 1, padding: 10, border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, background: authMode === m ? C.pink : "transparent", color: authMode === m ? "#1a0810" : C.inkDim }}>
                 {m === "login" ? "Kirish" : "Ro'yxatdan o'tish"}
               </button>
             ))}
@@ -565,6 +577,11 @@ export default function Sardogram() {
           )}
 
           <input value={authName} onChange={(e) => { setAuthName(e.target.value); if (authError) setAuthError(""); }} onKeyDown={(e) => e.key === "Enter" && submitAuth()} placeholder="Foydalanuvchi nomi" style={{ ...inputStyle, borderColor: authError ? C.pink : C.border }} />
+
+          <div style={{ position: "relative" }}>
+            <Lock size={15} color={C.inkDim} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+            <input type="password" value={authPassword} onChange={(e) => { setAuthPassword(e.target.value); if (authError) setAuthError(""); }} onKeyDown={(e) => e.key === "Enter" && submitAuth()} placeholder="Parol" style={{ ...inputStyle, borderColor: authError ? C.pink : C.border, padding: "12px 14px 12px 38px" }} />
+          </div>
 
           {authError && <div style={{ color: C.pink, fontSize: 12, marginTop: -6, marginBottom: 10 }}>{authError}</div>}
 
@@ -712,10 +729,14 @@ export default function Sardogram() {
               const u = users[reel.author] || {};
               return (
                 <div key={reel.id} style={{ scrollSnapAlign: "start", position: "relative", height: "calc(100vh - 172px)", background: "#000", borderRadius: 16, overflow: "hidden", marginBottom: 14, marginLeft: 16, marginRight: 16, width: "calc(100% - 32px)" }}>
-                  <video src={reel.videoUrl} autoPlay loop muted={reelMuted} playsInline style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <video src={reel.videoUrl} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   <div style={{ position: "absolute", right: 10, bottom: 70, display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
                     <button onClick={() => toggleReelLike(reel)} style={{ background: "rgba(0,0,0,0.4)", border: "none", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Heart size={22} color={liked ? C.pink : "#fff"} fill={liked ? C.pink : "none"} /></button>
                     <span style={{ color: "#fff", fontSize: 11, fontWeight: 700, marginTop: -12 }}>{reel.likes.length}</span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, marginTop: 4 }}>
+                      <Eye size={20} color="#fff" />
+                      <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{(reel.views || []).length}</span>
+                    </div>
                   </div>
                   <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 14, background: "linear-gradient(transparent, rgba(0,0,0,0.75))" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}><Avatar name={reel.author} color={u.color} avatar={u.avatar} size={30} /><span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}><NameTag name={reel.author} /></span></div>
