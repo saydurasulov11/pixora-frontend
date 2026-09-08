@@ -10,6 +10,15 @@ import {
  * To'liq mustaqil, serversiz ijtimoiy tarmoq ilovasi.
  * Hech qanday tashqi backend (API_URL) talab qilmaydi — barcha ma'lumot
  * brauzerning localStorage'ida saqlanadi.
+ *
+ * O'ZGARTIRISHLAR:
+ * - Endi ro'yxatdan o'tish/kirish parol bilan amalga oshiriladi.
+ * - Parol tizimi joriy qilinganda eski (parolsiz) akkauntlar bekor qilinadi —
+ *   hamma qaytadan ro'yxatdan o'tishi kerak (bir martalik migratsiya).
+ * - Faqat "sardor", "davlat" va "shuxrat" nomli akkauntlar ro'yxatdan
+ *   o'tishda avtomatik tasdiqlash belgisini (blue badge) oladi. Boshqa
+ *   hech kim uni sotib ololmaydi — tugmani bosganda rad javobi chiqadi.
+ * - Login endi katta-kichik harflarga sezgir emas (bug tuzatildi).
  */
 
 // ---------- Ranglar va shrift ----------
@@ -27,6 +36,11 @@ const FONT = "-apple-system, 'Helvetica Neue', Arial, sans-serif";
 const AVATAR_COLORS = ["#ff3d6e", "#3ddbff", "#ffb84d", "#8b6bff", "#4dd48a", "#ff7a5c"];
 const STORAGE_PREFIX = "sardogram_";
 const key = (name) => `${STORAGE_PREFIX}${name}`;
+
+// Faqat shu nikliklar avtomatik tasdiqlash belgisini oladi
+const VERIFIED_ALLOWED = ["sardor", "davlat", "shuxrat"];
+// Parol tizimi joriy qilingani uchun bir martalik migratsiya kaliti
+const MIGRATION_KEY = key("migrated_password_v2");
 
 // ---------- Stil yordamchilari ----------
 const inputStyle = {
@@ -104,6 +118,10 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
+// Katta-kichik harflarga sezgir bo'lmagan holda foydalanuvchi kalitini topadi
+function findUserKey(usersObj, name) {
+  return Object.keys(usersObj).find((u) => u.toLowerCase() === name.toLowerCase());
+}
 
 // ---------- Kichik komponentlar ----------
 function NameTag({ name, verified, size = 14 }) {
@@ -172,6 +190,7 @@ export default function Sardogram() {
   // Auth holati
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authColor, setAuthColor] = useState(AVATAR_COLORS[0]);
   const [authAvatar, setAuthAvatar] = useState("");
   const [authError, setAuthError] = useState("");
@@ -196,6 +215,16 @@ export default function Sardogram() {
 
   // ---------- Boshlang'ich yuklash ----------
   useEffect(() => {
+    // Parol tizimi joriy qilingani uchun bir martalik migratsiya:
+    // eski (parolsiz) akkauntlar va sessiyalar bekor qilinadi.
+    const alreadyMigrated = localStorage.getItem(MIGRATION_KEY);
+    if (!alreadyMigrated) {
+      ["posts", "reels", "users", "following", "notifs", "dms", "me"].forEach((name) =>
+        localStorage.removeItem(key(name))
+      );
+      localStorage.setItem(MIGRATION_KEY, "1");
+    }
+
     setPosts(readLS("posts", []));
     setReels(readLS("reels", []));
     setUsers(readLS("users", {}));
@@ -227,34 +256,53 @@ export default function Sardogram() {
   // ---------- Auth ----------
   const submitAuth = () => {
     const name = authName.trim();
+    const password = authPassword;
     if (!name) {
       setAuthError("Ismingizni kiriting");
       return;
     }
+    if (!password) {
+      setAuthError("Parolni kiriting");
+      return;
+    }
     const latestUsers = readLS("users", {});
     if (authMode === "register") {
-      const taken = Object.keys(latestUsers).some((u) => u.toLowerCase() === name.toLowerCase());
+      const taken = findUserKey(latestUsers, name);
       if (taken) {
         setAuthError(`"${name}" nomi band. Boshqasini tanlang.`);
         return;
       }
-      const profile = { username: name, bio: "", color: authColor, avatar: authAvatar.trim(), verified: false };
-      const nextUsers = { ...latestUsers, [name]: { bio: "", color: authColor, avatar: authAvatar.trim(), verified: false } };
+      const autoVerified = VERIFIED_ALLOWED.includes(name.toLowerCase());
+      const userRecord = {
+        bio: "",
+        color: authColor,
+        avatar: authAvatar.trim(),
+        verified: autoVerified,
+        password,
+      };
+      const nextUsers = { ...latestUsers, [name]: userRecord };
       persistUsers(nextUsers);
+      const profile = { username: name, ...userRecord };
       setMe(profile);
       writeLS("me", profile);
     } else {
-      const existing = latestUsers[name];
+      const existingKey = findUserKey(latestUsers, name);
+      const existing = existingKey ? latestUsers[existingKey] : null;
       if (!existing) {
         setAuthError(`"${name}" nomli akkaunt topilmadi. Ro'yxatdan o'ting.`);
         return;
       }
-      const profile = { username: name, ...existing };
+      if (existing.password !== password) {
+        setAuthError("Parol noto'g'ri");
+        return;
+      }
+      const profile = { username: existingKey, ...existing };
       setUsers(latestUsers);
       setMe(profile);
       writeLS("me", profile);
     }
     setAuthError("");
+    setAuthPassword("");
   };
 
   const logout = () => {
@@ -264,6 +312,10 @@ export default function Sardogram() {
 
   const buyVerification = () => {
     if (!me) return;
+    if (!VERIFIED_ALLOWED.includes(me.username.toLowerCase())) {
+      alert("Kechirasiz, tasdiqlash belgisi faqat maxsus akkauntlarga beriladi. Siz bu belgini ololmaysiz.");
+      return;
+    }
     const updatedMe = { ...me, verified: true };
     setMe(updatedMe);
     writeLS("me", updatedMe);
@@ -448,17 +500,26 @@ export default function Sardogram() {
             style={{ ...inputStyle, borderColor: authError ? C.pink : C.border }}
           />
 
+          <input
+            type="password"
+            value={authPassword}
+            onChange={(e) => { setAuthPassword(e.target.value); if (authError) setAuthError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && submitAuth()}
+            placeholder="Parol"
+            style={{ ...inputStyle, borderColor: authError ? C.pink : C.border }}
+          />
+
           {authError && <div style={{ color: C.pink, fontSize: 12, marginTop: -6, marginBottom: 10 }}>{authError}</div>}
 
           <button
             onClick={submitAuth}
-            disabled={!authName.trim()}
+            disabled={!authName.trim() || !authPassword}
             style={{
               width: "100%", padding: 14, borderRadius: 10, border: "none", marginTop: 4,
-              fontWeight: 700, fontSize: 15, cursor: authName.trim() ? "pointer" : "default",
-              background: authName.trim() ? C.pink : C.border,
-              color: authName.trim() ? "#1a0810" : C.inkDim,
-              boxShadow: authName.trim() ? `0 6px 20px ${C.pink}55` : "none",
+              fontWeight: 700, fontSize: 15, cursor: (authName.trim() && authPassword) ? "pointer" : "default",
+              background: (authName.trim() && authPassword) ? C.pink : C.border,
+              color: (authName.trim() && authPassword) ? "#1a0810" : C.inkDim,
+              boxShadow: (authName.trim() && authPassword) ? `0 6px 20px ${C.pink}55` : "none",
               transition: "all 0.15s",
             }}
           >
@@ -781,7 +842,7 @@ export default function Sardogram() {
           </div>
         )}
 
-        {/* BILDIRISHnomalar */}
+        {/* BILDIRISHNOMALAR */}
         {tab === "notifs" && (
           <div style={{ padding: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>Bildirishnomalar</h2>
