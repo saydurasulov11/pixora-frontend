@@ -8,17 +8,6 @@ import {
 /**
  * SARDOGRAM
  * To'liq mustaqil, serversiz ijtimoiy tarmoq ilovasi.
- * Hech qanday tashqi backend (API_URL) talab qilmaydi — barcha ma'lumot
- * brauzerning localStorage'ida saqlanadi.
- *
- * O'ZGARTIRISHLAR:
- * - Endi ro'yxatdan o'tish/kirish parol bilan amalga oshiriladi.
- * - Parol tizimi joriy qilinganda eski (parolsiz) akkauntlar bekor qilinadi —
- *   hamma qaytadan ro'yxatdan o'tishi kerak (bir martalik migratsiya).
- * - Faqat "sardor", "davlat" va "shuxrat" nomli akkauntlar ro'yxatdan
- *   o'tishda avtomatik tasdiqlash belgisini (blue badge) oladi. Boshqa
- *   hech kim uni sotib ololmaydi — tugmani bosganda rad javobi chiqadi.
- * - Login endi katta-kichik harflarga sezgir emas (bug tuzatildi).
  */
 
 // ---------- Ranglar va shrift ----------
@@ -118,7 +107,6 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
-// Katta-kichik harflarga sezgir bo'lmagan holda foydalanuvchi kalitini topadi
 function findUserKey(usersObj, name) {
   return Object.keys(usersObj).find((u) => u.toLowerCase() === name.toLowerCase());
 }
@@ -215,8 +203,6 @@ export default function Sardogram() {
 
   // ---------- Boshlang'ich yuklash ----------
   useEffect(() => {
-    // Parol tizimi joriy qilingani uchun bir martalik migratsiya:
-    // eski (parolsiz) akkauntlar va sessiyalar bekor qilinadi.
     const alreadyMigrated = localStorage.getItem(MIGRATION_KEY);
     if (!alreadyMigrated) {
       ["posts", "reels", "users", "following", "notifs", "dms", "me"].forEach((name) =>
@@ -310,18 +296,6 @@ export default function Sardogram() {
     localStorage.removeItem(key("me"));
   };
 
-  const buyVerification = () => {
-    if (!me) return;
-    if (!VERIFIED_ALLOWED.includes(me.username.toLowerCase())) {
-      alert("Kechirasiz, tasdiqlash belgisi faqat maxsus akkauntlarga beriladi. Siz bu belgini ololmaysiz.");
-      return;
-    }
-    const updatedMe = { ...me, verified: true };
-    setMe(updatedMe);
-    writeLS("me", updatedMe);
-    persistUsers({ ...users, [me.username]: { ...(users[me.username] || {}), verified: true } });
-  };
-
   // ---------- Media yuklash ----------
   const handleDraftFile = async (e, isVideo) => {
     const file = e.target.files[0];
@@ -412,7 +386,7 @@ export default function Sardogram() {
     if (!text || !me || !dmTarget) return;
     const k = convoKey(me.username, dmTarget);
     const thread = dms[k] || [];
-    persistDms({ ...dms, [k]: [...thread, { from: me.username, text, ts: Date.now() }] });
+    persistDms({ ...dms, [k]: [...thread, { from: me.username, text, ts: Date.now() }] }]);
     setMessageDraft("");
   };
 
@@ -537,7 +511,6 @@ export default function Sardogram() {
 
   // ---------- Hisoblangan qiymatlar ----------
   const storyUsers = Object.entries(users);
-  const myPosts = posts.filter((p) => p.author === me.username);
   const otherUsers = Object.keys(users).filter((u) => u !== me.username);
   const filteredUsers = Object.entries(users).filter(([u]) => u.toLowerCase().includes(searchQuery.toLowerCase()));
   const conversationPreview = (otherUser) => {
@@ -777,7 +750,7 @@ export default function Sardogram() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={username} verified={u.verified} /></div>
                         <div style={{ fontSize: 12, color: C.inkDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {lastMsg ? `${lastMsg.from === me.username ? "Siz: " : ""}${lastMsg.text}` : "Yozishni boshlash..."}
+                          {lastMsg ? `${lastMsg.from === me.username ? "Siz: " : ""}${lastMsg.text}` : "Suhbatni boshlash"}
                         </div>
                       </div>
                     </div>
@@ -785,25 +758,30 @@ export default function Sardogram() {
                 })}
               </>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 190px)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-                  <button onClick={() => setDmTarget(null)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", display: "flex" }}>
+              <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+                  <button onClick={() => setDmTarget(null)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", padding: 0, display: "flex" }}>
                     <ArrowLeft size={20} />
                   </button>
-                  <Avatar name={dmTarget} color={users[dmTarget]?.color} avatar={users[dmTarget]?.avatar} size={32} />
-                  <span style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={dmTarget} verified={users[dmTarget]?.verified} /></span>
+                  <Avatar name={dmTarget} color={users[dmTarget]?.color} avatar={users[dmTarget]?.avatar} size={34} />
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    <NameTag name={dmTarget} verified={users[dmTarget]?.verified} />
+                  </div>
                 </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: "12px 0", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {(dms[convoKey(me.username, dmTarget)] || []).map((m, idx) => {
+
+                <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, paddingBottom: 12 }}>
+                  {(dms[convoKey(me.username, dmTarget)] || []).map((m, i) => {
                     const isMe = m.from === me.username;
                     return (
-                      <div key={idx} style={{ alignSelf: isMe ? "flex-end" : "flex-start", background: isMe ? C.pink : C.card, color: isMe ? "#1a0810" : C.ink, padding: "8px 12px", borderRadius: 12, maxWidth: "75%", fontSize: 13 }}>
-                        {m.text}
+                      <div key={i} style={{ alignSelf: isMe ? "flex-end" : "flex-start", maxWidth: "75%", background: isMe ? C.pink : C.card, color: isMe ? "#1a0810" : C.ink, padding: "8px 12px", borderRadius: 12, fontSize: 13 }}>
+                        <div>{m.text}</div>
+                        <div style={{ fontSize: 10, color: isMe ? "rgba(26,8,16,0.6)" : C.inkDim, textAlign: "right", marginTop: 2 }}>{timeAgo(m.ts)}</div>
                       </div>
                     );
                   })}
                   <div ref={chatEndRef} />
                 </div>
+
                 <div style={{ display: "flex", gap: 8, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                   <input
                     value={messageDraft}
@@ -812,32 +790,11 @@ export default function Sardogram() {
                     placeholder="Xabar yozing..."
                     style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
                   />
-                  <button onClick={sendMessage} style={{ background: C.pink, border: "none", borderRadius: 8, padding: "0 14px", color: "#1a0810", cursor: "pointer", display: "flex", alignItems: "center" }}>
-                    <Send size={16} />
+                  <button onClick={sendMessage} style={{ background: C.pink, border: "none", borderRadius: 10, width: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    <Send size={18} color="#1a0810" />
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* PROFIL */}
-        {tab === "profile" && (
-          <div style={{ padding: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-              <Avatar name={me.username} color={me.color} avatar={me.avatar} size={64} />
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 800 }}><NameTag name={me.username} verified={me.verified} size={16} /></div>
-                <div style={{ fontSize: 13, color: C.inkDim, marginTop: 2 }}>{myPosts.length} ta post</div>
-              </div>
-            </div>
-            {!me.verified && (
-              <button onClick={buyVerification} style={{
-                width: "100%", background: `linear-gradient(135deg, ${C.blue}, ${C.pink})`, color: "#0d0e12", border: "none",
-                borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16
-              }}>
-                Tasdiqlash belgisini olish (Blue Badge)
-              </button>
             )}
           </div>
         )}
@@ -858,31 +815,62 @@ export default function Sardogram() {
             ))}
           </div>
         )}
+
+        {/* PROFIL */}
+        {tab === "profile" && (
+          <div style={{ padding: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+              <Avatar name={me.username} color={me.color} avatar={me.avatar} size={72} />
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 4 }}>
+                  <NameTag name={me.username} verified={me.verified} size={16} />
+                </h2>
+                <p style={{ margin: 0, fontSize: 13, color: C.inkDim }}>{me.bio || "Biografiya kiritilmagan"}</p>
+              </div>
+            </div>
+            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>Mening postlarim</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2 }}>
+                {posts.filter((p) => p.author === me.username && p.media).map((p) => (
+                  <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
+                    {p.isVideo
+                      ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Pastki navigatsiya paneli */}
+      {/* PASTKI NAVIGATSIYA */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(13,14,18,0.95)",
-        backdropFilter: "blur(14px)", borderTop: `1px solid ${C.border}`,
-        display: "flex", justifyContent: "around", alignItems: "center", padding: "8px 16px", zIndex: 10,
+        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 5,
+        background: "rgba(13,14,18,0.95)", backdropFilter: "blur(14px)",
+        borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-around",
+        padding: "10px 0", maxWidth: 480, margin: "0 auto",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-around", width: "100%", maxWidth: 480, margin: "0 auto" }}>
-          <IconTab active={tab === "feed"} onClick={() => setTab("feed")} Icon={Home} />
-          <IconTab active={tab === "search"} onClick={() => setTab("search")} Icon={Search} />
-          <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
-          <IconTab active={tab === "grid"} onClick={() => setTab("grid")} Icon={Grid3x3} />
-          <IconTab active={tab === "messages"} onClick={() => setTab("messages")} Icon={MessagesSquare} />
-          <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
-        </div>
+        <IconTab active={tab === "feed"} onClick={() => setTab("feed")} Icon={Home} />
+        <IconTab active={tab === "search"} onClick={() => setTab("search")} Icon={Search} />
+        <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
+        <IconTab active={tab === "grid"} onClick={() => setTab("grid")} Icon={Grid3x3} />
+        <IconTab active={tab === "messages"} onClick={() => setTab("messages")} Icon={MessagesSquare} />
+        <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
       </div>
 
       {/* POST YARATISH MODALI */}
       {composerOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
           <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Yangi post yaratish</h3>
-              <button onClick={() => setComposerOpen(false)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer" }}><X size={20} /></button>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi post yaratish</h3>
+              <button onClick={() => setComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}>
+                <X size={20} />
+              </button>
             </div>
             <textarea
               value={draftText}
@@ -891,9 +879,15 @@ export default function Sardogram() {
               style={{ ...inputStyle, height: 90, resize: "none", marginBottom: 12 }}
             />
             {draftMedia && (
-              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000", maxHeight: 200 }}>
-                {draftIsVideo ? <video src={draftMedia} controls style={{ width: "100%", maxHeight: 200 }} /> : <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover" }} />}
-                <button onClick={() => setDraftMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", padding: 4, cursor: "pointer", color: "#fff" }}><X size={16} /></button>
+              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000" }}>
+                {draftIsVideo ? (
+                  <video src={draftMedia} style={{ width: "100%", maxHeight: 200, display: "block" }} />
+                ) : (
+                  <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", display: "block" }} />
+                )}
+                <button onClick={() => setDraftMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <X size={16} />
+                </button>
               </div>
             )}
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
@@ -906,7 +900,16 @@ export default function Sardogram() {
                 <input type="file" accept="video/*" onChange={(e) => handleDraftFile(e, true)} style={{ display: "none" }} />
               </label>
             </div>
-            <button onClick={submitPost} style={{ width: "100%", background: C.pink, color: "#1a0810", border: "none", borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            <button
+              onClick={submitPost}
+              disabled={!draftText.trim() && !draftMedia}
+              style={{
+                width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14,
+                background: (draftText.trim() || draftMedia) ? C.pink : C.border,
+                color: (draftText.trim() || draftMedia) ? "#1a0810" : C.inkDim,
+                cursor: (draftText.trim() || draftMedia) ? "pointer" : "default",
+              }}
+            >
               Ulashish
             </button>
           </div>
@@ -915,22 +918,29 @@ export default function Sardogram() {
 
       {/* REEL YARATISH MODALI */}
       {reelComposerOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.8)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
           <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Yangi Reel yaratish</h3>
-              <button onClick={() => setReelComposerOpen(false)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer" }}><X size={20} /></button>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Yangi Reel yaratish</h3>
+              <button onClick={() => setReelComposerOpen(false)} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer" }}>
+                <X size={20} />
+              </button>
             </div>
             {!reelMedia ? (
-              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 160, border: `2px dashed ${C.border}`, borderRadius: 12, cursor: "pointer", color: C.inkDim, marginBottom: 12 }}>
-                <VideoIcon size={32} style={{ marginBottom: 8 }} />
-                <span>Video tanlang</span>
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, height: 160, border: `2px dashed ${C.border}`, borderRadius: 12, cursor: "pointer", color: C.inkDim, marginBottom: 16 }}>
+                <VideoIcon size={32} color={C.pink} />
+                <span>Reel videosini tanlang</span>
                 <input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} />
               </label>
             ) : (
-              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000", maxHeight: 200 }}>
-                <video src={reelMedia} controls style={{ width: "100%", maxHeight: 200 }} />
-                <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", padding: 4, cursor: "pointer", color: "#fff" }}><X size={16} /></button>
+              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000" }}>
+                <video src={reelMedia} style={{ width: "100%", maxHeight: 200, display: "block" }} controls />
+                <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <X size5={16} />
+                </button>
               </div>
             )}
             <input
@@ -939,7 +949,16 @@ export default function Sardogram() {
               placeholder="Izoh yozing..."
               style={inputStyle}
             />
-            <button onClick={submitReel} disabled={!reelMedia} style={{ width: "100%", background: reelMedia ? C.pink : C.border, color: reelMedia ? "#1a0810" : C.inkDim, border: "none", borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 14, cursor: reelMedia ? "pointer" : "default" }}>
+            <button
+              onClick={submitReel}
+              disabled={!reelMedia}
+              style={{
+                width: "100%", padding: 12, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14,
+                background: reelMedia ? C.pink : C.border,
+                color: reelMedia ? "#1a0810" : C.inkDim,
+                cursor: reelMedia ? "pointer" : "default",
+              }}
+            >
               Yuklash
             </button>
           </div>
