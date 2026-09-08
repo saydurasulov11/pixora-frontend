@@ -28,6 +28,52 @@ const AVATAR_COLORS = ["#ff3d6e", "#3ddbff", "#ffb84d", "#8b6bff", "#4dd48a", "#
 const STORAGE_PREFIX = "sardogram_";
 const key = (name) => `${STORAGE_PREFIX}${name}`;
 
+// ---------- Stil yordamchilari ----------
+const inputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: `1px solid ${C.border}`,
+  background: C.card,
+  color: C.ink,
+  fontSize: 14,
+  outline: "none",
+  fontFamily: FONT,
+  marginBottom: 12,
+  boxSizing: "border-box",
+};
+
+function likeBtnStyle(liked) {
+  return {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    color: liked ? C.pink : C.inkDim,
+    fontWeight: 600,
+    fontSize: 13,
+    padding: 0,
+  };
+}
+
+function followBtnStyle(isFollowing) {
+  return {
+    background: isFollowing ? "transparent" : C.pink,
+    color: isFollowing ? C.ink : "#1a0810",
+    border: isFollowing ? `1px solid ${C.border}` : "none",
+    borderRadius: 8,
+    padding: "6px 12px",
+    fontWeight: 700,
+    fontSize: 12,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+  };
+}
+
 // ---------- Yordamchi funksiyalar ----------
 function readLS(name, fallback) {
   try {
@@ -101,6 +147,14 @@ function IconTab({ active, onClick, Icon }) {
   );
 }
 
+function EmptyState({ text }) {
+  return (
+    <div style={{ textAlign: "center", padding: "40px 20px", color: C.inkDim, fontSize: 14 }}>
+      {text}
+    </div>
+  );
+}
+
 // ---------- Asosiy komponent ----------
 export default function Sardogram() {
   const [booting, setBooting] = useState(true);
@@ -122,7 +176,7 @@ export default function Sardogram() {
   const [authAvatar, setAuthAvatar] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // Post/Reel yaratish
+  // Post/Reel yaratish modal/oynalari
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [draftMedia, setDraftMedia] = useState("");
@@ -719,29 +773,15 @@ export default function Sardogram() {
             {!me.verified && (
               <button onClick={buyVerification} style={{
                 width: "100%", background: `linear-gradient(135deg, ${C.blue}, ${C.pink})`, color: "#0d0e12", border: "none",
-                borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16,
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16
               }}>
-                <BadgeCheck size={16} /> Tasdiqlangan (Verified) statusini olish
+                Tasdiqlash belgisini olish (Blue Badge)
               </button>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2 }}>
-              {myPosts.map((p) => (
-                <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                  {p.media ? (
-                    p.isVideo
-                      ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                      : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <div style={{ position: "absolute", inset: 0, padding: 8, fontSize: 11, background: C.card, overflow: "hidden" }}>{p.text}</div>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
-        {/* BILDIRISHNOMA */}
+        {/* BILDIRISHnomalar */}
         {tab === "notifs" && (
           <div style={{ padding: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 14px" }}>Bildirishnomalar</h2>
@@ -761,139 +801,89 @@ export default function Sardogram() {
 
       {/* Pastki navigatsiya paneli */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(13,14,18,0.92)",
+        position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(13,14,18,0.95)",
         backdropFilter: "blur(14px)", borderTop: `1px solid ${C.border}`,
-        display: "flex", justifyContent: "space-around", padding: "10px 0", zIndex: 5,
+        display: "flex", justifyContent: "around", alignItems: "center", padding: "8px 16px", zIndex: 10,
       }}>
-        <IconTab active={tab === "feed"} onClick={() => setTab("feed")} Icon={Home} />
-        <IconTab active={tab === "search"} onClick={() => setTab("search")} Icon={Search} />
-        <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
-        <IconTab active={tab === "grid"} onClick={() => setTab("grid")} Icon={Grid3x3} />
-        <IconTab active={tab === "messages"} onClick={() => setTab("messages")} Icon={MessagesSquare} />
-        <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
-      </div>
-
-      {/* Post yaratish modali */}
-      {composerOpen && (
-        <Modal title="Yangi post yaratish" onClose={() => setComposerOpen(false)}>
-          <textarea
-            value={draftText}
-            onChange={(e) => setDraftText(e.target.value)}
-            placeholder="Nima haqida o'ylayapsiz?"
-            style={{ ...inputStyle, minHeight: 90, resize: "vertical", fontFamily: FONT }}
-          />
-          {draftMedia && (
-            <div style={{ position: "relative", marginBottom: 12, borderRadius: 10, overflow: "hidden", background: "#000" }}>
-              {draftIsVideo
-                ? <video src={draftMedia} controls style={{ width: "100%", maxHeight: 220, display: "block" }} />
-                : <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 220, objectFit: "cover", display: "block" }} />}
-              <button onClick={() => { setDraftMedia(""); setDraftIsVideo(false); }} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <X size={14} />
-              </button>
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-            <label style={mediaBtnStyle}>
-              <ImageIcon size={16} /> Rasm yuklash
-              <input type="file" accept="image/*" onChange={(e) => handleDraftFile(e, false)} style={{ display: "none" }} />
-            </label>
-            <label style={mediaBtnStyle}>
-              <VideoIcon size={16} /> Video yuklash
-              <input type="file" accept="video/*" onChange={(e) => handleDraftFile(e, true)} style={{ display: "none" }} />
-            </label>
-          </div>
-          <button onClick={submitPost} style={primaryBtnStyle}>Ulashish</button>
-        </Modal>
-      )}
-
-      {/* Reel yaratish modali */}
-      {reelComposerOpen && (
-        <Modal title="Yangi Reel yaratish" onClose={() => setReelComposerOpen(false)}>
-          {reelMedia ? (
-            <div style={{ position: "relative", marginBottom: 12, borderRadius: 10, overflow: "hidden", background: "#000" }}>
-              <video src={reelMedia} controls style={{ width: "100%", maxHeight: 260, display: "block" }} />
-              <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 26, height: 26, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <X size={14} />
-              </button>
-            </div>
-          ) : (
-            <label style={{ ...mediaBtnStyle, display: "flex", justifyContent: "center", padding: 24, marginBottom: 14 }}>
-              <VideoIcon size={20} /> Reel videosini tanlang
-              <input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} />
-            </label>
-          )}
-          <input
-            value={reelCaption}
-            onChange={(e) => setReelCaption(e.target.value)}
-            placeholder="Izoh yozing..."
-            style={inputStyle}
-          />
-          <button onClick={submitReel} style={primaryBtnStyle}>Reels'ga joylash</button>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ---------- Qo'shimcha UI komponentlar va uslublar ----------
-function Modal({ title, onClose, children }) {
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, padding: 16,
-    }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 400, padding: 20, animation: "fadeUp 0.25s ease-out" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{title}</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: C.inkDim, cursor: "pointer", display: "flex" }}>
-            <X size={18} />
-          </button>
+        <div style={{ display: "flex", justifyContent: "space-around", width: "100%", maxWidth: 480, margin: "0 auto" }}>
+          <IconTab active={tab === "feed"} onClick={() => setTab("feed")} Icon={Home} />
+          <IconTab active={tab === "search"} onClick={() => setTab("search")} Icon={Search} />
+          <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
+          <IconTab active={tab === "grid"} onClick={() => setTab("grid")} Icon={Grid3x3} />
+          <IconTab active={tab === "messages"} onClick={() => setTab("messages")} Icon={MessagesSquare} />
+          <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
         </div>
-        {children}
       </div>
+
+      {/* POST YARATISH MODALI */}
+      {composerOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+          <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Yangi post yaratish</h3>
+              <button onClick={() => setComposerOpen(false)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            <textarea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              placeholder="Nima gaplar?"
+              style={{ ...inputStyle, height: 90, resize: "none", marginBottom: 12 }}
+            />
+            {draftMedia && (
+              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000", maxHeight: 200 }}>
+                {draftIsVideo ? <video src={draftMedia} controls style={{ width: "100%", maxHeight: 200 }} /> : <img src={draftMedia} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover" }} />}
+                <button onClick={() => setDraftMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", padding: 4, cursor: "pointer", color: "#fff" }}><X size={16} /></button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.pink, cursor: "pointer", background: C.cardAlt, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                <ImageIcon size={16} /> Rasm
+                <input type="file" accept="image/*" onChange={(e) => handleDraftFile(e, false)} style={{ display: "none" }} />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.blue, cursor: "pointer", background: C.cardAlt, padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                <VideoIcon size={16} /> Video
+                <input type="file" accept="video/*" onChange={(e) => handleDraftFile(e, true)} style={{ display: "none" }} />
+              </label>
+            </div>
+            <button onClick={submitPost} style={{ width: "100%", background: C.pink, color: "#1a0810", border: "none", borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              Ulashish
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* REEL YARATISH MODALI */}
+      {reelComposerOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+          <div style={{ background: C.card, width: "100%", maxWidth: 400, borderRadius: 16, padding: 20, border: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Yangi Reel yaratish</h3>
+              <button onClick={() => setReelComposerOpen(false)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer" }}><X size={20} /></button>
+            </div>
+            {!reelMedia ? (
+              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 160, border: `2px dashed ${C.border}`, borderRadius: 12, cursor: "pointer", color: C.inkDim, marginBottom: 12 }}>
+                <VideoIcon size={32} style={{ marginBottom: 8 }} />
+                <span>Video tanlang</span>
+                <input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} />
+              </label>
+            ) : (
+              <div style={{ position: "relative", marginBottom: 12, borderRadius: 8, overflow: "hidden", background: "#000", maxHeight: 200 }}>
+                <video src={reelMedia} controls style={{ width: "100%", maxHeight: 200 }} />
+                <button onClick={() => setReelMedia("")} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", padding: 4, cursor: "pointer", color: "#fff" }}><X size={16} /></button>
+              </div>
+            )}
+            <input
+              value={reelCaption}
+              onChange={(e) => setReelCaption(e.target.value)}
+              placeholder="Izoh yozing..."
+              style={inputStyle}
+            />
+            <button onClick={submitReel} disabled={!reelMedia} style={{ width: "100%", background: reelMedia ? C.pink : C.border, color: reelMedia ? "#1a0810" : C.inkDim, border: "none", borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 14, cursor: reelMedia ? "pointer" : "default" }}>
+              Yuklash
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-
-function EmptyState({ text }) {
-  return (
-    <div style={{ textAlign: "center", padding: "40px 20px", color: C.inkDim, fontSize: 14 }}>
-      {text}
-    </div>
-  );
-}
-
-const inputStyle = {
-  width: "100%", background: C.cardAlt, border: `1px solid ${C.border}`,
-  borderRadius: 10, padding: "12px 14px", color: C.ink, fontSize: 14,
-  outline: "none", marginBottom: 12, boxSizing: "border-box",
-};
-
-const primaryBtnStyle = {
-  width: "100%", background: C.pink, color: "#1a0810", border: "none",
-  borderRadius: 10, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer",
-};
-
-const mediaBtnStyle = {
-  flex: 1, background: C.cardAlt, border: `1px solid ${C.border}`, borderRadius: 8,
-  padding: 10, color: C.ink, fontSize: 13, fontWeight: 600, cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-};
-
-function likeBtnStyle(liked) {
-  return {
-    background: "none", border: "none", cursor: "pointer", padding: 0,
-    color: liked ? C.pink : C.inkDim, display: "flex", alignItems: "center",
-    gap: 5, fontSize: 13, fontWeight: 600,
-  };
-}
-
-function followBtnStyle(isFollowing) {
-  return {
-    background: isFollowing ? C.cardAlt : C.pink,
-    color: isFollowing ? C.ink : "#1a0810",
-    border: isFollowing ? `1px solid ${C.border}` : "none",
-    borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 12,
-    cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-  };
 }
