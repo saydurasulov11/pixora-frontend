@@ -73,6 +73,10 @@ function readLS(name, fallback) {
 function writeLS(name, value) { localStorage.setItem(lsKey(name), JSON.stringify(value)); }
 
 // ---------- Umumiy yordamchilar ----------
+function msgPreview(m) {
+  if (!m) return "";
+  return m.type === "reel" ? "🎬 Reel yubordi" : m.text;
+}
 function timeAgo(ts) {
   if (!ts) return "";
   const d = Math.floor((Date.now() - ts) / 1000);
@@ -97,6 +101,17 @@ function fileToDataUrl(file) {
 // ============================================================================
 // FIREBASE QATLAMI
 // ============================================================================
+// Qurilma turini (mobil / kompyuter) aniqlash — ekran o'zgarganda ham yangilanadi
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth < 700 : true));
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return isMobile;
+}
+
 function useFirestoreBackend() {
   const [db, setDb] = useState(null);
   const [rtdb, setRtdb] = useState(null);
@@ -126,6 +141,7 @@ function useFirestoreBackend() {
 
 export default function Sardogram() {
   const { db, ready, fns, rtdb, rtdbFns, enabled } = useFirestoreBackend();
+  const isMobile = useIsMobile();
 
   const [booting, setBooting] = useState(true);
   const [me, setMe] = useState(null);
@@ -168,6 +184,7 @@ export default function Sardogram() {
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState([]);
+  const [shareReel, setShareReel] = useState(null);
 
   const [commentDrafts, setCommentDrafts] = useState({});
   const [openComments, setOpenComments] = useState({});
@@ -526,6 +543,13 @@ export default function Sardogram() {
     if (activeThread.type === "dm" && activeThread.peer !== me.username) pushNotification(activeThread.peer, me.username, "sizga xabar yubordi 💬");
     setMessageDraft("");
   };
+  const sendReelToThread = async (reel, thread) => {
+    if (!me) return;
+    const tid = threadIdFor({ ...thread, me: me.username });
+    await sendMessageRemote(tid, { from: me.username, type: "reel", reelAuthor: reel.author, reelCaption: reel.caption || "", reelMedia: reel.videoUrl, text: "", ts: Date.now(), read: false });
+    if (thread.type === "dm" && thread.peer !== me.username) pushNotification(thread.peer, me.username, "sizga reel yubordi 🎬");
+    setShareReel(null);
+  };
 
   // -------------------- VIDEO QO'NG'IROQ (WebRTC + Firestore signalizatsiya) --------------------
   const cleanupCall = () => {
@@ -714,7 +738,8 @@ export default function Sardogram() {
   const activeMessages = activeTid ? (dms[activeTid] || []) : [];
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.ink, fontFamily: FONT }}>
+    <div style={{ background: isMobile ? C.bg : "#050609", minHeight: "100vh", color: C.ink, fontFamily: FONT }}>
+      <div style={{ maxWidth: isMobile ? "100%" : 480, margin: "0 auto", minHeight: "100vh", background: C.bg, borderLeft: isMobile ? "none" : `1px solid ${C.border}`, borderRight: isMobile ? "none" : `1px solid ${C.border}`, boxShadow: isMobile ? "none" : "0 0 60px rgba(0,0,0,0.55)" }}>
       {/* Header */}
       <div style={{ position: "sticky", top: 0, zIndex: 5, background: "rgba(10,11,14,0.9)", backdropFilter: "blur(14px)", borderBottom: `1px solid ${C.border}`, padding: "13px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h1 style={{ fontSize: 21, fontWeight: 900, margin: 0, letterSpacing: "-0.5px" }}>
@@ -827,20 +852,21 @@ export default function Sardogram() {
           <div style={{ height: "calc(100vh - 130px)", overflowY: "auto", scrollSnapType: "y mandatory" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
               <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Reels</h2>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setReelMuted((m) => !m)} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: 6, color: C.inkDim, cursor: "pointer" }}>{reelMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
-                <button onClick={() => setReelComposerOpen(true)} style={{ background: C.pink, color: "#1a0810", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Reel</button>
-              </div>
+              <button onClick={() => setReelComposerOpen(true)} style={{ background: C.pink, color: "#1a0810", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>+ Reel</button>
             </div>
             {reels.length === 0 ? <EmptyState text="Hozircha Reels yo'q" /> : reels.map((reel) => {
               const liked = reel.likes.includes(me.username);
               const u = users[reel.author] || {};
               return (
                 <div key={reel.id} style={{ scrollSnapAlign: "start", position: "relative", height: "calc(100vh - 172px)", background: "#000", borderRadius: 16, overflow: "hidden", marginBottom: 14, marginLeft: 16, marginRight: 16, width: "calc(100% - 32px)" }}>
-                  <video src={mediaSrc(reel.videoUrl)} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <video src={mediaSrc(reel.videoUrl)} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} onClick={() => setReelMuted((m) => !m)} style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
+                  <button onClick={() => setReelMuted((m) => !m)} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.45)", border: "none", borderRadius: "50%", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                    {reelMuted ? <VolumeX size={16} color="#fff" /> : <Volume2 size={16} color="#fff" />}
+                  </button>
                   <div style={{ position: "absolute", right: 10, bottom: 70, display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
                     <button onClick={() => toggleReelLike(reel)} style={{ background: "rgba(0,0,0,0.4)", border: "none", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Heart size={22} color={liked ? C.pink : "#fff"} fill={liked ? C.pink : "none"} /></button>
                     <span style={{ color: "#fff", fontSize: 11, fontWeight: 700, marginTop: -12 }}>{reel.likes.length}</span>
+                    <button onClick={() => setShareReel(reel)} style={{ background: "rgba(0,0,0,0.4)", border: "none", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Send size={20} color="#fff" /></button>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, marginTop: 4 }}>
                       <Eye size={20} color="#fff" />
                       <span style={{ color: "#fff", fontSize: 11, fontWeight: 700 }}>{(reel.views || []).length}</span>
@@ -884,7 +910,7 @@ export default function Sardogram() {
                       <div style={{ width: 46, height: 46, borderRadius: "50%", background: `linear-gradient(135deg, ${C.blue}, ${C.pink})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Users size={20} color="#001a1f" /></div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, display: "flex", justifyContent: "space-between" }}><span>{g.name}</span>{lastMsg && <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 400 }}>{timeAgo(lastMsg.ts)}</span>}</div>
-                        <div style={{ fontSize: 13, color: C.inkDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lastMsg ? `${lastMsg.from}: ${lastMsg.text}` : `${g.members.length} a'zo`}</div>
+                        <div style={{ fontSize: 13, color: C.inkDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lastMsg ? `${lastMsg.from}: ${msgPreview(lastMsg)}` : `${g.members.length} a'zo`}</div>
                       </div>
                     </div>
                   );
@@ -898,7 +924,7 @@ export default function Sardogram() {
                         <div style={{ fontSize: 14, fontWeight: 700, display: "flex", justifyContent: "space-between" }}><NameTag name={username} />{lastMsg && <span style={{ fontSize: 11, color: C.inkDim, fontWeight: 400 }}>{timeAgo(lastMsg.ts)}</span>}</div>
                         <div style={{ fontSize: 13, color: C.inkDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
                           {lastMsg?.from === me.username && (lastMsg.read ? <CheckCheck size={13} color={C.blue} /> : <Check size={13} color={C.inkDim} />)}
-                          {lastMsg ? lastMsg.text : "Yozishni boshlash..."}
+                          {lastMsg ? msgPreview(lastMsg) : "Yozishni boshlash..."}
                         </div>
                       </div>
                     </div>
@@ -926,8 +952,14 @@ export default function Sardogram() {
                     return (
                       <div key={m.id || idx} style={{ alignSelf: isMe ? "flex-end" : "flex-start", maxWidth: "78%", display: "flex", flexDirection: "column" }}>
                         {activeThread.type === "group" && !isMe && <span style={{ fontSize: 11, color: C.blue, marginBottom: 2, marginLeft: 4 }}>{m.from}</span>}
-                        <div style={{ background: isMe ? "#1f5a3a" : C.card, color: C.ink, padding: "8px 12px 6px", borderRadius: isMe ? "14px 14px 3px 14px" : "14px 14px 14px 3px", fontSize: 14, lineHeight: 1.4 }}>
-                          {m.text}
+                        <div style={{ background: isMe ? "#1f5a3a" : C.card, color: C.ink, padding: m.type === "reel" ? 8 : "8px 12px 6px", borderRadius: isMe ? "14px 14px 3px 14px" : "14px 14px 14px 3px", fontSize: 14, lineHeight: 1.4 }}>
+                          {m.type === "reel" ? (
+                            <div style={{ width: 160 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 5, color: C.inkDim, fontSize: 11 }}><Clapperboard size={12} /> Reel · <NameTag name={m.reelAuthor} /></div>
+                              <video src={mediaSrc(m.reelMedia)} controls style={{ width: "100%", maxHeight: 210, borderRadius: 8, background: "#000", display: "block" }} />
+                              {m.reelCaption && <p style={{ margin: "5px 0 0", fontSize: 12, color: C.inkDim }}>{m.reelCaption}</p>}
+                            </div>
+                          ) : m.text}
                           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3, marginTop: 3 }}>
                             <span style={{ fontSize: 10, color: C.inkDim }}>{new Date(m.ts).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</span>
                             {isMe && activeThread.type === "dm" && (m.read ? <CheckCheck size={13} color={C.blue} /> : <Check size={13} color={C.inkDim} />)}
@@ -997,9 +1029,10 @@ export default function Sardogram() {
           </div>
         )}
       </div>
+      </div>
 
       {/* PASTKI NAVIGATSIYA */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(10,11,14,0.92)", backdropFilter: "blur(14px)", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-around", padding: "8px 0", zIndex: 10 }}>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: isMobile ? "100%" : 480, background: "rgba(10,11,14,0.92)", backdropFilter: "blur(14px)", borderTop: `1px solid ${C.border}`, borderLeft: isMobile ? "none" : `1px solid ${C.border}`, borderRight: isMobile ? "none" : `1px solid ${C.border}`, display: "flex", justifyContent: "space-around", padding: "8px 0", zIndex: 10 }}>
         <IconTab active={tab === "feed"} onClick={() => setTab("feed")} Icon={Home} />
         <IconTab active={tab === "search"} onClick={() => setTab("search")} Icon={Search} />
         <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
@@ -1069,6 +1102,33 @@ export default function Sardogram() {
             })}
           </div>
           <button onClick={submitGroup} disabled={!groupName.trim() || groupMembers.length === 0} style={{ ...submitBtnStyle, opacity: !groupName.trim() || groupMembers.length === 0 ? 0.5 : 1 }}>Guruh yaratish</button>
+        </Modal>
+      )}
+
+      {/* REEL YUBORISH (Instagram uslubidagi repost) MODALI */}
+      {shareReel && (
+        <Modal onClose={() => setShareReel(null)} title="Reel yuborish">
+          <div style={{ maxHeight: 340, overflowY: "auto" }}>
+            {otherUsers.length === 0 && groups.length === 0 && <p style={{ color: C.inkDim, fontSize: 13 }}>Yuborish uchun hech kim yo'q</p>}
+            {groups.map((g) => (
+              <div key={g.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: "50%", background: `linear-gradient(135deg, ${C.blue}, ${C.pink})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Users size={16} color="#001a1f" /></div>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{g.name}</span>
+                </div>
+                <button onClick={() => sendReelToThread(shareReel, { type: "group", id: g.id, name: g.name, members: g.members })} style={{ background: C.pink, border: "none", borderRadius: 8, padding: "6px 12px", color: "#1a0810", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Yuborish</button>
+              </div>
+            ))}
+            {otherUsers.map((u) => (
+              <div key={u} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Avatar name={u} color={users[u]?.color} avatar={users[u]?.avatar} size={34} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}><NameTag name={u} /></span>
+                </div>
+                <button onClick={() => sendReelToThread(shareReel, { type: "dm", peer: u })} style={{ background: C.pink, border: "none", borderRadius: 8, padding: "6px 12px", color: "#1a0810", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Yuborish</button>
+              </div>
+            ))}
+          </div>
         </Modal>
       )}
 
