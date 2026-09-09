@@ -12,8 +12,13 @@ import {
  * SARDOGRAM — Instagram + TikTok + WhatsApp uslublari birlashtirilgan ilova
  * ============================================================================
  * Real vaqtli ko'p qurilmali sinxronizatsiya uchun Firebase Firestore ishlatiladi.
- * Sozlash: https://console.firebase.google.com — loyiha yarating, Firestore'ni
- * yoqing ("test mode"), Web ilova qo'shib config'ni pastga joylang.
+ * Rasm/video fayllar esa Firebase Realtime Database'da saqlanadi (Storage
+ * to'lov rejasini talab qilgani uchun, Realtime Database esa BEPUL Spark
+ * rejasida ham ishlaydi).
+ * Sozlash: https://console.firebase.google.com — loyihada Build > Realtime
+ * Database > "Create database" ("test mode") ni yoqing, u sizga
+ * "https://sardogram-default-rtdb...firebasedatabase.app" kabi manzil
+ * beradi — uni pastdagi databaseURL qatoriga joylang.
  * ============================================================================
  */
 const FIREBASE_CONFIG = {
@@ -23,6 +28,7 @@ const FIREBASE_CONFIG = {
   storageBucket: "sardogram.firebasestorage.app",
   messagingSenderId: "134388428662",
   appId: "1:134388428662:web:b45bdfab1eb5f9ef37d457",
+  databaseURL: "https://sardogram-default-rtdb.firebaseio.com", // Realtime Database yoqilgach shu yerni yangilang
 };
 const FIREBASE_READY = !!FIREBASE_CONFIG.apiKey && !!FIREBASE_CONFIG.projectId;
 const SDK = "https://www.gstatic.com/firebasejs/10.12.2";
@@ -93,27 +99,33 @@ function fileToDataUrl(file) {
 // ============================================================================
 function useFirestoreBackend() {
   const [db, setDb] = useState(null);
+  const [rtdb, setRtdb] = useState(null);
   const [ready, setReady] = useState(!FIREBASE_READY);
   const fns = useRef(null);
+  const rtdbFns = useRef(null);
 
   useEffect(() => {
     if (!FIREBASE_READY) return;
     (async () => {
       const { initializeApp } = await import(/* @vite-ignore */ `${SDK}/firebase-app.js`);
       const firestore = await import(/* @vite-ignore */ `${SDK}/firebase-firestore.js`);
+      const database = await import(/* @vite-ignore */ `${SDK}/firebase-database.js`);
       const app = initializeApp(FIREBASE_CONFIG);
-      const database = firestore.getFirestore(app);
+      const firestoreDb = firestore.getFirestore(app);
+      const rtdbInst = database.getDatabase(app);
       fns.current = firestore;
-      setDb(database);
+      rtdbFns.current = database;
+      setDb(firestoreDb);
+      setRtdb(rtdbInst);
       setReady(true);
     })();
   }, []);
 
-  return { db, ready, fns: fns.current, enabled: FIREBASE_READY };
+  return { db, ready, fns: fns.current, rtdb, rtdbFns: rtdbFns.current, enabled: FIREBASE_READY };
 }
 
 export default function Sardogram() {
-  const { db, ready, fns, enabled } = useFirestoreBackend();
+  const { db, ready, fns, rtdb, rtdbFns, enabled } = useFirestoreBackend();
 
   const [booting, setBooting] = useState(true);
   const [me, setMe] = useState(null);
@@ -125,6 +137,7 @@ export default function Sardogram() {
   const [following, setFollowing] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [dms, setDms] = useState({});
+  const [mediaCache, setMediaCache] = useState({});
 
   const [tab, setTab] = useState("feed");
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,12 +156,15 @@ export default function Sardogram() {
   const [draftText, setDraftText] = useState("");
   const [draftMedia, setDraftMedia] = useState("");
   const [draftIsVideo, setDraftIsVideo] = useState(false);
+  const [draftUploading, setDraftUploading] = useState(false);
 
   const [reelComposerOpen, setReelComposerOpen] = useState(false);
   const [reelMedia, setReelMedia] = useState("");
   const [reelCaption, setReelCaption] = useState("");
+  const [reelUploading, setReelUploading] = useState(false);
   const [storyComposerOpen, setStoryComposerOpen] = useState(false);
   const [storyMedia, setStoryMedia] = useState("");
+  const [storyUploading, setStoryUploading] = useState(false);
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState([]);
@@ -267,6 +283,25 @@ export default function Sardogram() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [dms, activeThread]);
   useEffect(() => { writeLS("chatTheme", chatTheme); }, [chatTheme]);
+
+  // Rasm/video "rtdb:<key>" havolalarini haqiqiy ma'lumotga aylantirish
+  useEffect(() => {
+    if (!enabled || !rtdb || !rtdbFns) return;
+    const refsNeeded = new Set();
+    posts.forEach((p) => { if (p.media?.startsWith("rtdb:") && !(p.media in mediaCache)) refsNeeded.add(p.media); });
+    reels.forEach((r) => { if (r.videoUrl?.startsWith("rtdb:") && !(r.videoUrl in mediaCache)) refsNeeded.add(r.videoUrl); });
+    stories.forEach((s) => { if (s.media?.startsWith("rtdb:") && !(s.media in mediaCache)) refsNeeded.add(s.media); });
+    if (refsNeeded.size === 0) return;
+    const { ref, get } = rtdbFns;
+    refsNeeded.forEach(async (val) => {
+      const key = val.slice(5);
+      try {
+        const snap = await get(ref(rtdb, "media/" + key));
+        setMediaCache((prev) => ({ ...prev, [val]: snap.exists() ? snap.val().data : null }));
+      } catch { setMediaCache((prev) => ({ ...prev, [val]: null })); }
+    });
+  }, [posts, reels, stories, enabled, rtdb, rtdbFns, mediaCache]);
+
   useEffect(() => { if (localVideoRef.current && localStreamRef.current) localVideoRef.current.srcObject = localStreamRef.current; }, [callState.status]);
   useEffect(() => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream; }, [remoteStream]);
 
@@ -360,20 +395,55 @@ export default function Sardogram() {
   const logout = () => { setMe(null); localStorage.removeItem(lsKey("me")); setActiveThread(null); };
 
   // -------------------- Media --------------------
-  const handleDraftFile = async (e, isVideo) => { const f = e.target.files[0]; if (!f) return; setDraftMedia(await fileToDataUrl(f)); setDraftIsVideo(isVideo); };
-  const handleReelFile = async (e) => { const f = e.target.files[0]; if (!f) return; setReelMedia(await fileToDataUrl(f)); };
-  const handleStoryFile = async (e) => { const f = e.target.files[0]; if (!f) return; setStoryMedia(await fileToDataUrl(f)); };
+  // Firestore hujjatlari 1MB dan katta bo'la olmaydi — shuning uchun fayl (rasm/video)
+  // avval o'qiladi (base64), so'ng SUBMIT vaqtida Realtime Database'ga yoziladi
+  // (bepul, hajm chegarasi ancha katta), Firestore'ga esa faqat "rtdb:<key>" havolasi yoziladi.
+  const storeMedia = async (dataUrl) => {
+    if (enabled && rtdb && rtdbFns) {
+      const { ref, push, set } = rtdbFns;
+      const mRef = push(ref(rtdb, "media"));
+      await set(mRef, { data: dataUrl, ts: Date.now() });
+      return "rtdb:" + mRef.key;
+    }
+    return dataUrl; // Firebase ulanmagan holatda zaxira rejim (localStorage)
+  };
+  const mediaSrc = (val) => (val && val.startsWith("rtdb:") ? mediaCache[val] : val);
+  const handleDraftFile = async (e, isVideo) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { setDraftMedia(await fileToDataUrl(f)); setDraftIsVideo(isVideo); }
+    catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
+  };
+  const handleReelFile = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { setReelMedia(await fileToDataUrl(f)); }
+    catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
+  };
+  const handleStoryFile = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try { setStoryMedia(await fileToDataUrl(f)); }
+    catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
+  };
 
   // -------------------- Aksiyalar --------------------
   const submitPost = async () => {
     if ((!draftText.trim() && !draftMedia) || !me) return;
-    await addPost({ author: me.username, text: draftText.trim(), media: draftMedia, isVideo: draftIsVideo, ts: Date.now(), likes: [], comments: [] });
-    setDraftText(""); setDraftMedia(""); setDraftIsVideo(false); setComposerOpen(false);
+    setDraftUploading(true);
+    try {
+      const mediaVal = draftMedia ? await storeMedia(draftMedia) : "";
+      await addPost({ author: me.username, text: draftText.trim(), media: mediaVal, isVideo: draftIsVideo, ts: Date.now(), likes: [], comments: [] });
+      setDraftText(""); setDraftMedia(""); setDraftIsVideo(false); setComposerOpen(false);
+    } catch (err) { alert("Post joylashda xatolik: " + err.message); }
+    setDraftUploading(false);
   };
   const submitReel = async () => {
     if (!reelMedia || !me) return;
-    await addReel({ author: me.username, videoUrl: reelMedia, caption: reelCaption.trim(), ts: Date.now(), likes: [], views: [] });
-    setReelMedia(""); setReelCaption(""); setReelComposerOpen(false);
+    setReelUploading(true);
+    try {
+      const videoVal = await storeMedia(reelMedia);
+      await addReel({ author: me.username, videoUrl: videoVal, caption: reelCaption.trim(), ts: Date.now(), likes: [], views: [] });
+      setReelMedia(""); setReelCaption(""); setReelComposerOpen(false);
+    } catch (err) { alert("Reel joylashda xatolik: " + err.message); }
+    setReelUploading(false);
   };
   const registerReelView = async (reel) => {
     if (!me) return;
@@ -383,8 +453,13 @@ export default function Sardogram() {
   };
   const submitStory = async () => {
     if (!storyMedia || !me) return;
-    await addStory({ author: me.username, media: storyMedia, ts: Date.now() });
-    setStoryMedia(""); setStoryComposerOpen(false);
+    setStoryUploading(true);
+    try {
+      const mediaVal = await storeMedia(storyMedia);
+      await addStory({ author: me.username, media: mediaVal, ts: Date.now() });
+      setStoryMedia(""); setStoryComposerOpen(false);
+    } catch (err) { alert("Hikoya joylashda xatolik: " + err.message); }
+    setStoryUploading(false);
   };
   const submitGroup = async () => {
     const name = groupName.trim();
@@ -531,6 +606,7 @@ export default function Sardogram() {
         await Promise.all(thread.docs.map((d) => deleteDoc(d.ref)));
       }
       await wipe("groups");
+      if (rtdb && rtdbFns) { try { await rtdbFns.set(rtdbFns.ref(rtdb, "media"), null); } catch {} }
       localStorage.clear();
       alert("Baza tozalandi. Sahifa qayta yuklanadi.");
       window.location.reload();
@@ -665,7 +741,7 @@ export default function Sardogram() {
                   </div>
                   {post.media && (
                     <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 10, background: "#000" }}>
-                      {post.isVideo ? <video src={post.media} controls style={{ width: "100%", maxHeight: 480, display: "block" }} /> : <img src={post.media} alt="" style={{ width: "100%", maxHeight: 480, objectFit: "cover", display: "block" }} />}
+                      {post.isVideo ? <video src={mediaSrc(post.media)} controls style={{ width: "100%", maxHeight: 480, display: "block" }} /> : <img src={mediaSrc(post.media)} alt="" style={{ width: "100%", maxHeight: 480, objectFit: "cover", display: "block" }} />}
                     </div>
                   )}
                   {post.text && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.5 }}>{post.text}</p>}
@@ -701,7 +777,7 @@ export default function Sardogram() {
             {searchQuery === "" && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, marginBottom: 16 }}>
                 {posts.filter((p) => p.media && !p.isVideo).slice(0, 21).map((p) => (
-                  <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}><img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /></div>
+                  <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}><img src={mediaSrc(p.media)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /></div>
                 ))}
               </div>
             )}
@@ -740,7 +816,7 @@ export default function Sardogram() {
               const u = users[reel.author] || {};
               return (
                 <div key={reel.id} style={{ scrollSnapAlign: "start", position: "relative", height: "calc(100vh - 172px)", background: "#000", borderRadius: 16, overflow: "hidden", marginBottom: 14, marginLeft: 16, marginRight: 16, width: "calc(100% - 32px)" }}>
-                  <video src={reel.videoUrl} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <video src={mediaSrc(reel.videoUrl)} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   <div style={{ position: "absolute", right: 10, bottom: 70, display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
                     <button onClick={() => toggleReelLike(reel)} style={{ background: "rgba(0,0,0,0.4)", border: "none", borderRadius: "50%", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><Heart size={22} color={liked ? C.pink : "#fff"} fill={liked ? C.pink : "none"} /></button>
                     <span style={{ color: "#fff", fontSize: 11, fontWeight: 700, marginTop: -12 }}>{reel.likes.length}</span>
@@ -764,7 +840,7 @@ export default function Sardogram() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, padding: 2 }}>
             {posts.filter((p) => p.media).map((p) => (
               <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                {p.isVideo ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+                {p.isVideo ? <video src={mediaSrc(p.media)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={mediaSrc(p.media)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
               </div>
             ))}
             {posts.filter((p) => p.media).length === 0 && <div style={{ gridColumn: "span 3" }}><EmptyState text="Media postlar yo'q" /></div>}
@@ -876,7 +952,7 @@ export default function Sardogram() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, marginBottom: 20 }}>
                 {userPosts.map((p) => (
                   <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                    {p.media ? (p.isVideo ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />) : <div style={{ position: "absolute", inset: 0, padding: 8, fontSize: 11, background: C.card, overflow: "hidden" }}>{p.text}</div>}
+                    {p.media ? (p.isVideo ? <video src={mediaSrc(p.media)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={mediaSrc(p.media)} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />) : <div style={{ position: "absolute", inset: 0, padding: 8, fontSize: 11, background: C.card, overflow: "hidden" }}>{p.text}</div>}
                   </div>
                 ))}
                 {userPosts.length === 0 && <div style={{ gridColumn: "span 3" }}><EmptyState text="Postlar yo'q" /></div>}
@@ -925,7 +1001,7 @@ export default function Sardogram() {
             <label style={fileLabelStyle}><ImageIcon size={14} /> Rasm<input type="file" accept="image/*" onChange={(e) => handleDraftFile(e, false)} style={{ display: "none" }} /></label>
             <label style={fileLabelStyle}><VideoIcon size={14} /> Video<input type="file" accept="video/*" onChange={(e) => handleDraftFile(e, true)} style={{ display: "none" }} /></label>
           </div>
-          <button onClick={submitPost} style={submitBtnStyle}>Ulashish</button>
+          <button onClick={submitPost} disabled={draftUploading} style={{ ...submitBtnStyle, opacity: draftUploading ? 0.5 : 1 }}>{draftUploading ? "Joylanmoqda..." : "Ulashish"}</button>
         </Modal>
       )}
 
@@ -938,7 +1014,7 @@ export default function Sardogram() {
             <label style={{ ...fileLabelStyle, width: "100%", justifyContent: "center", padding: 22, marginBottom: 12 }}><VideoIcon size={18} /> Video tanlash<input type="file" accept="video/*" onChange={handleReelFile} style={{ display: "none" }} /></label>
           )}
           <textarea value={reelCaption} onChange={(e) => setReelCaption(e.target.value)} placeholder="Izoh yozing..." style={{ ...inputStyle, height: 60, resize: "none" }} />
-          <button onClick={submitReel} style={submitBtnStyle}>Yuklash</button>
+          <button onClick={submitReel} disabled={reelUploading || !reelMedia} style={{ ...submitBtnStyle, opacity: reelUploading || !reelMedia ? 0.5 : 1, cursor: reelUploading || !reelMedia ? "default" : "pointer" }}>{reelUploading ? "Joylanmoqda..." : "Yuklash"}</button>
         </Modal>
       )}
 
@@ -950,7 +1026,7 @@ export default function Sardogram() {
           ) : (
             <label style={{ ...fileLabelStyle, width: "100%", justifyContent: "center", padding: 30, marginBottom: 12 }}><ImageIcon size={18} /> Rasm tanlash<input type="file" accept="image/*" onChange={handleStoryFile} style={{ display: "none" }} /></label>
           )}
-          <button onClick={submitStory} style={submitBtnStyle}>Ulashish</button>
+          <button onClick={submitStory} disabled={storyUploading || !storyMedia} style={{ ...submitBtnStyle, opacity: storyUploading || !storyMedia ? 0.5 : 1 }}>{storyUploading ? "Joylanmoqda..." : "Ulashish"}</button>
         </Modal>
       )}
 
@@ -1000,7 +1076,7 @@ export default function Sardogram() {
             <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{storyViewer.username}</span>
           </div>
           <button onClick={() => setStoryViewer(null)} style={{ position: "absolute", top: 18, right: 14, background: "none", border: "none", color: "#fff", cursor: "pointer" }}><X size={24} /></button>
-          <img src={storyViewer.items[storyViewer.idx].media} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          <img src={mediaSrc(storyViewer.items[storyViewer.idx].media)} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
           <div style={{ position: "absolute", inset: 0, display: "flex" }}>
             <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setStoryViewer((v) => v.idx > 0 ? { ...v, idx: v.idx - 1 } : null)} />
             <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setStoryViewer((v) => v.idx < v.items.length - 1 ? { ...v, idx: v.idx + 1 } : null)} />
