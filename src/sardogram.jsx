@@ -297,7 +297,16 @@ export default function Sardogram() {
       const key = val.slice(5);
       try {
         const snap = await get(ref(rtdb, "media/" + key));
-        setMediaCache((prev) => ({ ...prev, [val]: snap.exists() ? snap.val().data : null }));
+        if (!snap.exists()) { setMediaCache((prev) => ({ ...prev, [val]: null })); return; }
+        const raw = snap.val();
+        let data;
+        if (typeof raw.data === "string") data = raw.data; // eski format bilan moslik
+        else {
+          const parts = [];
+          for (let i = 0; i < (raw.count || 0); i++) parts.push(raw["c" + i] || "");
+          data = parts.join("");
+        }
+        setMediaCache((prev) => ({ ...prev, [val]: data }));
       } catch { setMediaCache((prev) => ({ ...prev, [val]: null })); }
     });
   }, [posts, reels, stories, enabled, rtdb, rtdbFns, mediaCache]);
@@ -398,28 +407,40 @@ export default function Sardogram() {
   // Firestore hujjatlari 1MB dan katta bo'la olmaydi — shuning uchun fayl (rasm/video)
   // avval o'qiladi (base64), so'ng SUBMIT vaqtida Realtime Database'ga yoziladi
   // (bepul, hajm chegarasi ancha katta), Firestore'ga esa faqat "rtdb:<key>" havolasi yoziladi.
+  // Realtime Database'da BITTA qiymat 10MB dan katta bo'la olmaydi — shuning uchun
+  // katta video/rasmlar 8MB'lik bo'laklarga bo'lib yoziladi va o'qishda birlashtiriladi.
+  const RTDB_CHUNK = 8 * 1000 * 1000;
   const storeMedia = async (dataUrl) => {
     if (enabled && rtdb && rtdbFns) {
       const { ref, push, set } = rtdbFns;
       const mRef = push(ref(rtdb, "media"));
-      await set(mRef, { data: dataUrl, ts: Date.now() });
+      const payload = { ts: Date.now() };
+      let count = 0;
+      for (let i = 0; i < dataUrl.length; i += RTDB_CHUNK) { payload["c" + count] = dataUrl.slice(i, i + RTDB_CHUNK); count++; }
+      payload.count = count;
+      await set(mRef, payload);
       return "rtdb:" + mRef.key;
     }
     return dataUrl; // Firebase ulanmagan holatda zaxira rejim (localStorage)
   };
   const mediaSrc = (val) => (val && val.startsWith("rtdb:") ? mediaCache[val] : val);
+  const MAX_MEDIA_MB = 60;
+  const checkFileSize = (f) => {
+    if (f.size > MAX_MEDIA_MB * 1024 * 1024) { alert(`Fayl juda katta (${(f.size / 1024 / 1024).toFixed(1)}MB). Iltimos ${MAX_MEDIA_MB}MB dan kichikroq fayl tanlang.`); return false; }
+    return true;
+  };
   const handleDraftFile = async (e, isVideo) => {
-    const f = e.target.files[0]; if (!f) return;
+    const f = e.target.files[0]; if (!f || !checkFileSize(f)) return;
     try { setDraftMedia(await fileToDataUrl(f)); setDraftIsVideo(isVideo); }
     catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
   };
   const handleReelFile = async (e) => {
-    const f = e.target.files[0]; if (!f) return;
+    const f = e.target.files[0]; if (!f || !checkFileSize(f)) return;
     try { setReelMedia(await fileToDataUrl(f)); }
     catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
   };
   const handleStoryFile = async (e) => {
-    const f = e.target.files[0]; if (!f) return;
+    const f = e.target.files[0]; if (!f || !checkFileSize(f)) return;
     try { setStoryMedia(await fileToDataUrl(f)); }
     catch (err) { alert("Fayl o'qishda xatolik: " + err.message); }
   };
