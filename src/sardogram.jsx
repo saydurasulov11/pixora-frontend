@@ -129,6 +129,7 @@ export default function Sardogram() {
   const [tab, setTab] = useState("feed");
   const [searchQuery, setSearchQuery] = useState("");
   const [storyViewer, setStoryViewer] = useState(null);
+  const [viewingProfile, setViewingProfile] = useState(null);
 
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState("");
@@ -712,7 +713,12 @@ export default function Sardogram() {
                     <Avatar name={username} color={u.color} avatar={u.avatar} size={42} />
                     <div><div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={username} /></div><div style={{ fontSize: 12, color: C.inkDim }}>{u.bio || "Foydalanuvchi"}</div></div>
                   </div>
-                  {!isMe && <button onClick={() => toggleFollow(username)} style={followBtnStyle(isF)}>{isF ? <UserCheck size={14} /> : <UserPlus size={14} />}{isF ? "Obunadasiz" : "Obuna bo'lish"}</button>}
+                  {!isMe && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => { setViewingProfile(username); setTab("profile"); }} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 12px", color: C.ink, fontWeight: 700, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><User size={14} /> Profil</button>
+                      <button onClick={() => toggleFollow(username)} style={followBtnStyle(isF)}>{isF ? <UserCheck size={14} /> : <UserPlus size={14} />}{isF ? "Obunadasiz" : "Obuna bo'lish"}</button>
+                    </div>
+                  )}
                 </div>
               );
             }))}
@@ -845,26 +851,44 @@ export default function Sardogram() {
         )}
 
         {/* PROFIL */}
-        {tab === "profile" && (
-          <div style={{ padding: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-              <Avatar name={me.username} color={me.color} avatar={me.avatar} size={64} />
-              <div><div style={{ fontSize: 16, fontWeight: 800 }}><NameTag name={me.username} size={16} /></div><div style={{ fontSize: 13, color: C.inkDim, marginTop: 2 }}>{myPosts.length} ta post</div></div>
+        {tab === "profile" && (() => {
+          const profileUser = viewingProfile || me.username;
+          const isMine = profileUser === me.username;
+          const u = isMine ? me : (users[profileUser] || {});
+          const userPosts = posts.filter((p) => p.author === profileUser);
+          const isF = following.includes(profileUser);
+          return (
+            <div style={{ padding: 16 }}>
+              {!isMine && (
+                <button onClick={() => setViewingProfile(null)} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 14, padding: 0, fontSize: 13, fontWeight: 600 }}>
+                  <ArrowLeft size={18} /> Orqaga
+                </button>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+                <Avatar name={profileUser} color={u.color} avatar={u.avatar} size={64} />
+                <div><div style={{ fontSize: 16, fontWeight: 800 }}><NameTag name={profileUser} size={16} /></div><div style={{ fontSize: 13, color: C.inkDim, marginTop: 2 }}>{userPosts.length} ta post</div></div>
+              </div>
+              {!isMine && (
+                <button onClick={() => toggleFollow(profileUser)} style={{ ...followBtnStyle(isF), width: "100%", justifyContent: "center", padding: 10, marginBottom: 16 }}>
+                  {isF ? <UserCheck size={16} /> : <UserPlus size={16} />} {isF ? "Obunadasiz" : "Obuna bo'lish"}
+                </button>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, marginBottom: 20 }}>
+                {userPosts.map((p) => (
+                  <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
+                    {p.media ? (p.isVideo ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />) : <div style={{ position: "absolute", inset: 0, padding: 8, fontSize: 11, background: C.card, overflow: "hidden" }}>{p.text}</div>}
+                  </div>
+                ))}
+                {userPosts.length === 0 && <div style={{ gridColumn: "span 3" }}><EmptyState text="Postlar yo'q" /></div>}
+              </div>
+              {isMine && isAdmin(me.username) && (
+                <button onClick={resetEverything} style={{ width: "100%", background: "#2a0f14", border: "1px solid #5a1a24", color: "#ff6b81", borderRadius: 8, padding: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <Trash2 size={14} /> Admin: barcha ma'lumotlarni tozalash
+                </button>
+              )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2, marginBottom: 20 }}>
-              {myPosts.map((p) => (
-                <div key={p.id} style={{ position: "relative", paddingTop: "100%", background: "#000" }}>
-                  {p.media ? (p.isVideo ? <video src={p.media} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /> : <img src={p.media} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />) : <div style={{ position: "absolute", inset: 0, padding: 8, fontSize: 11, background: C.card, overflow: "hidden" }}>{p.text}</div>}
-                </div>
-              ))}
-            </div>
-            {isAdmin(me.username) && (
-              <button onClick={resetEverything} style={{ width: "100%", background: "#2a0f14", border: "1px solid #5a1a24", color: "#ff6b81", borderRadius: 8, padding: 10, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Trash2 size={14} /> Admin: barcha ma'lumotlarni tozalash
-              </button>
-            )}
-          </div>
-        )}
+          );
+        })()}
 
         {/* BILDIRISHNOMALAR */}
         {tab === "notifs" && (
@@ -884,7 +908,7 @@ export default function Sardogram() {
         <IconTab active={tab === "reels"} onClick={() => setTab("reels")} Icon={Clapperboard} />
         <IconTab active={tab === "grid"} onClick={() => setTab("grid")} Icon={Grid3x3} />
         <IconTab active={tab === "messages"} onClick={() => { setTab("messages"); setActiveThread(null); }} Icon={MessagesSquare} />
-        <IconTab active={tab === "profile"} onClick={() => setTab("profile")} Icon={User} />
+        <IconTab active={tab === "profile"} onClick={() => { setViewingProfile(null); setTab("profile"); }} Icon={User} />
       </div>
 
       {/* POST MODALI */}
