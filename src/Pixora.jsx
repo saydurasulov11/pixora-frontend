@@ -4,7 +4,7 @@ import {
   MessagesSquare, ArrowLeft, BadgeCheck, Search, Clapperboard, UserPlus,
   UserCheck, Bell, PlusSquare, Image as ImageIcon, Video as VideoIcon,
   Check, CheckCheck, Plus, Volume2, VolumeX, Phone, PhoneOff, Users,
-  Palette, Trash2, Mic, MicOff, VideoOff, Eye, Lock,
+  Palette, Trash2, Mic, MicOff, VideoOff, Eye, Lock, Repeat2,
 } from "lucide-react";
 
 /**
@@ -151,6 +151,7 @@ export default function Sardogram() {
   const [stories, setStories] = useState([]);
   const [groups, setGroups] = useState([]);
   const [following, setFollowing] = useState([]);
+  const [allFollows, setAllFollows] = useState({}); // username -> [following...] (barcha foydalanuvchilar uchun)
   const [notifications, setNotifications] = useState([]);
   const [dms, setDms] = useState({});
   const [mediaCache, setMediaCache] = useState({});
@@ -195,6 +196,9 @@ export default function Sardogram() {
   const [chatTheme, setChatTheme] = useState(() => readLS("chatTheme", "default"));
   const chatEndRef = useRef(null);
   const [reelMuted, setReelMuted] = useState(true);
+  const [activeReelId, setActiveReelId] = useState(null); // hozir ko'rinayotgan (va ovozi/video ishlayotgan) reel
+  const reelVideoRefs = useRef({}); // id -> <video> elementi
+  const reelObserverRef = useRef(null);
 
   // ---- Video qo'ng'iroq holati ----
   const [callState, setCallState] = useState({ status: "idle" }); // idle | calling | in-call
@@ -222,6 +226,11 @@ export default function Sardogram() {
       setFollowing(readLS("following", []));
       setNotifications(readLS("notifs", []));
       setDms(readLS("dms", {}));
+      // Barcha foydalanuvchilarning obuna ro'yxatlarini yig'ib, kuzatuvchilar sonini hisoblash uchun
+      const usersNow = readLS("users", {});
+      const followsMap = {};
+      Object.keys(usersNow).forEach((u) => { followsMap[u] = readLS("following_" + u, []); });
+      setAllFollows(followsMap);
     };
     sync();
     const savedMe = readLS("me", null);
@@ -250,10 +259,14 @@ export default function Sardogram() {
       const now = Date.now();
       setStories(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((s) => now - s.ts < STORY_TTL));
     });
+    // Kuzatuvchilar sonini profilda ko'rsatish uchun barcha "follows" hujjatlarini o'qiymiz
+    const unsubAllFollows = onSnapshot(collection(db, "follows"), (snap) => {
+      const next = {}; snap.forEach((d) => { next[d.id] = d.data().following || []; }); setAllFollows(next);
+    });
     setBooting(false);
     const savedMe = readLS("me", null);
     if (savedMe) setMe(savedMe);
-    return () => { unsubUsers(); unsubPosts(); unsubReels(); unsubStories(); };
+    return () => { unsubUsers(); unsubPosts(); unsubReels(); unsubStories(); unsubAllFollows(); };
   }, [enabled, ready, db, fns]);
 
   // Men uchun: following, bildirishnoma, guruhlar, kiruvchi qo'ng'iroqlar
@@ -331,6 +344,49 @@ export default function Sardogram() {
   useEffect(() => { if (localVideoRef.current && localStreamRef.current) localVideoRef.current.srcObject = localStreamRef.current; }, [callState.status]);
   useEffect(() => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream; }, [remoteStream]);
 
+  // -------------------- REELS: faqat ekranda ko'rinayotgan reel ijro etilsin --------------------
+  // Muammo: barcha <video autoPlay> bir vaqtning o'zida ijro etilardi, shu sabab bir nechta
+  // reelning ovozi bir vaqtda eshitilardi. IntersectionObserver bilan faqat eng ko'p ko'rinib
+  // turgan reel play qilinadi, qolganlari pauza qilinadi va boshiga qaytariladi.
+  useEffect(() => {
+    if (tab !== "reels") {
+      // Reels tabidan chiqilganda barcha videolarni to'xtatamiz
+      Object.values(reelVideoRefs.current).forEach((v) => { if (v) { try { v.pause(); } catch {} } });
+      setActiveReelId(null);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let best = null;
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && (!best || entry.intersectionRatio > best.intersectionRatio)) best = entry;
+        });
+        if (best && best.target.dataset.reelId) setActiveReelId(best.target.dataset.reelId);
+      },
+      { threshold: [0.6, 0.75, 0.9] }
+    );
+    reelObserverRef.current = observer;
+    const nodes = document.querySelectorAll("[data-reel-id]");
+    nodes.forEach((n) => observer.observe(n));
+    return () => observer.disconnect();
+  }, [tab, reels.length]);
+
+  useEffect(() => {
+    // activeReelId o'zgarganda: faqat o'sha video play, qolganlari pauza + boshiga qaytariladi
+    Object.entries(reelVideoRefs.current).forEach(([id, video]) => {
+      if (!video) return;
+      if (id === activeReelId) {
+        video.currentTime = video.currentTime; // holatini saqlab qolamiz
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+        try { video.currentTime = 0; } catch {}
+      }
+    });
+  }, [activeReelId]);
+
+  useEffect(() => { Object.values(reelVideoRefs.current).forEach((v) => { if (v) v.muted = reelMuted; }); }, [reelMuted, activeReelId]);
+
   // -------------------- Yozish (Firebase yoki localStorage'ga) --------------------
   const writeUser = async (username, data) => {
     if (enabled && db && fns) await fns.setDoc(fns.doc(db, "users", username), data, { merge: true });
@@ -365,7 +421,7 @@ export default function Sardogram() {
   };
   const setFollowingRemote = async (username, list) => {
     if (enabled && db && fns) await fns.setDoc(fns.doc(db, "follows", username), { following: list }, { merge: true });
-    else { writeLS("following_" + username, list); setFollowing(list); pingTabs(); }
+    else { writeLS("following_" + username, list); setFollowing(list); setAllFollows((prev) => ({ ...prev, [username]: list })); pingTabs(); }
   };
   const pushNotification = async (toUser, fromUser, text) => {
     const item = { from: fromUser, text, ts: Date.now() };
@@ -549,6 +605,22 @@ export default function Sardogram() {
     await sendMessageRemote(tid, { from: me.username, type: "reel", reelAuthor: reel.author, reelCaption: reel.caption || "", reelMedia: reel.videoUrl, text: "", ts: Date.now(), read: false });
     if (thread.type === "dm" && thread.peer !== me.username) pushNotification(thread.peer, me.username, "sizga reel yubordi 🎬");
     setShareReel(null);
+  };
+  // Repost: postni o'z sahifangizga qayta ulashish (Instagram'dagi repost kabi)
+  const repostPost = async (post) => {
+    if (!me) return;
+    await addPost({
+      author: me.username,
+      text: post.text || "",
+      media: post.media || "",
+      isVideo: !!post.isVideo,
+      ts: Date.now(),
+      likes: [],
+      comments: [],
+      repostOf: post.author,
+    });
+    if (post.author !== me.username) pushNotification(post.author, me.username, "postingizni repost qildi 🔁");
+    alert("Repost qilindi — sahifangizda ko'rinadi.");
   };
 
   // -------------------- VIDEO QO'NG'IROQ (WebRTC + Firestore signalizatsiya) --------------------
@@ -736,6 +808,19 @@ export default function Sardogram() {
   const storiesByUser = {}; stories.forEach((s) => { (storiesByUser[s.author] ||= []).push(s); });
   const activeTid = activeThread ? threadIdFor({ ...activeThread, me: me.username }) : null;
   const activeMessages = activeTid ? (dms[activeTid] || []) : [];
+  // Foydalanuvchining kuzatuvchilari (followers) sonini barcha "follows" yozuvlaridan hisoblaymiz
+  const followersCountOf = (username) => Object.entries(allFollows).filter(([u, list]) => u !== username && (list || []).includes(username)).length;
+  const followingCountOf = (username) => (username === me.username ? following.length : (allFollows[username] || []).length);
+  // Post/reelni "men obuna bo'lgan odamlar"dan kim layk bosgani (Instagram uslubidagi "Liked by ...")
+  const likedByFollowing = (likesArr) => (likesArr || []).filter((u) => following.includes(u) && u !== me.username);
+  const likeSummary = (likesArr) => {
+    const arr = likesArr || [];
+    if (arr.length === 0) return "";
+    const fromFollowing = likedByFollowing(arr);
+    if (fromFollowing.length === 0) return String(arr.length);
+    const rest = arr.length - 1;
+    return rest > 0 ? `${fromFollowing[0]} va yana ${rest}` : fromFollowing[0];
+  };
 
   return (
     <div style={{ background: isMobile ? C.bg : "#050609", minHeight: "100vh", color: C.ink, fontFamily: FONT }}>
@@ -779,11 +864,18 @@ export default function Sardogram() {
             {posts.length === 0 ? <EmptyState text="Hali postlar yo'q. Birinchi bo'lib ulashing!" /> : posts.map((post) => {
               const liked = post.likes.includes(me.username);
               const u = users[post.author] || {};
+              const summary = likeSummary(post.likes);
               return (
                 <div key={post.id} style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                     <Avatar name={post.author} color={u.color} avatar={u.avatar} />
-                    <div><div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={post.author} /></div><div style={{ fontSize: 11, color: C.inkDim }}>{timeAgo(post.ts)}</div></div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}><NameTag name={post.author} /></div>
+                      <div style={{ fontSize: 11, color: C.inkDim }}>
+                        {timeAgo(post.ts)}
+                        {post.repostOf && <span> · <Repeat2 size={11} style={{ verticalAlign: "-2px" }} /> repost: <NameTag name={post.repostOf} size={11} /> dan</span>}
+                      </div>
+                    </div>
                   </div>
                   {post.media && (
                     <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 10, background: "#000" }}>
@@ -794,8 +886,14 @@ export default function Sardogram() {
                   <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
                     <button onClick={() => toggleLike(post)} style={likeBtnStyle(liked)}><Heart size={18} fill={liked ? C.pink : "none"} />{post.likes.length > 0 && post.likes.length}</button>
                     <button onClick={() => setOpenComments((o) => ({ ...o, [post.id]: !o[post.id] }))} style={likeBtnStyle(false)}><MessageCircle size={18} />{post.comments.length > 0 && post.comments.length}</button>
+                    <button onClick={() => repostPost(post)} title="Repost" style={likeBtnStyle(false)}><Repeat2 size={18} /></button>
                     <Bookmark size={18} color={C.inkDim} style={{ marginLeft: "auto" }} />
                   </div>
+                  {summary && (
+                    <div style={{ fontSize: 12, color: C.inkDim, marginTop: 6 }}>
+                      {likedByFollowing(post.likes).length > 0 ? <>Yoqtirganlar: <NameTag name={likedByFollowing(post.likes)[0]} size={12} />{post.likes.length > 1 && ` va yana ${post.likes.length - 1} kishi`}</> : `${summary} ta layk`}
+                    </div>
+                  )}
                   {openComments[post.id] && (
                     <div style={{ marginTop: 10 }}>
                       {post.comments.map((c, i) => (
@@ -858,8 +956,17 @@ export default function Sardogram() {
               const liked = reel.likes.includes(me.username);
               const u = users[reel.author] || {};
               return (
-                <div key={reel.id} style={{ scrollSnapAlign: "start", position: "relative", height: "calc(100vh - 172px)", background: "#000", borderRadius: 16, overflow: "hidden", marginBottom: 14, marginLeft: 16, marginRight: 16, width: "calc(100% - 32px)" }}>
-                  <video src={mediaSrc(reel.videoUrl)} autoPlay loop muted={reelMuted} playsInline onPlay={() => registerReelView(reel)} onClick={() => setReelMuted((m) => !m)} style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
+                <div key={reel.id} data-reel-id={reel.id} style={{ scrollSnapAlign: "start", position: "relative", height: "calc(100vh - 172px)", background: "#000", borderRadius: 16, overflow: "hidden", marginBottom: 14, marginLeft: 16, marginRight: 16, width: "calc(100% - 32px)" }}>
+                  <video
+                    ref={(el) => { reelVideoRefs.current[reel.id] = el; }}
+                    src={mediaSrc(reel.videoUrl)}
+                    loop
+                    muted={reelMuted}
+                    playsInline
+                    onPlay={() => registerReelView(reel)}
+                    onClick={() => setReelMuted((m) => !m)}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }}
+                  />
                   <button onClick={() => setReelMuted((m) => !m)} style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.45)", border: "none", borderRadius: "50%", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                     {reelMuted ? <VolumeX size={16} color="#fff" /> : <Volume2 size={16} color="#fff" />}
                   </button>
@@ -986,6 +1093,8 @@ export default function Sardogram() {
           const u = isMine ? me : (users[profileUser] || {});
           const userPosts = posts.filter((p) => p.author === profileUser);
           const isF = following.includes(profileUser);
+          const followersN = followersCountOf(profileUser);
+          const followingN = followingCountOf(profileUser);
           return (
             <div style={{ padding: 16 }}>
               {!isMine && (
@@ -995,8 +1104,13 @@ export default function Sardogram() {
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
                 <Avatar name={profileUser} color={u.color} avatar={u.avatar} size={64} />
-                <div><div style={{ fontSize: 16, fontWeight: 800 }}><NameTag name={profileUser} size={16} /></div><div style={{ fontSize: 13, color: C.inkDim, marginTop: 2 }}>{userPosts.length} ta post</div></div>
+                <div style={{ display: "flex", gap: 18 }}>
+                  <div style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800 }}>{userPosts.length}</div><div style={{ fontSize: 11, color: C.inkDim }}>post</div></div>
+                  <div style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800 }}>{followersN}</div><div style={{ fontSize: 11, color: C.inkDim }}>kuzatuvchi</div></div>
+                  <div style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800 }}>{followingN}</div><div style={{ fontSize: 11, color: C.inkDim }}>obuna</div></div>
+                </div>
               </div>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16 }}><NameTag name={profileUser} size={16} /></div>
               {!isMine && (
                 <button onClick={() => toggleFollow(profileUser)} style={{ ...followBtnStyle(isF), width: "100%", justifyContent: "center", padding: 10, marginBottom: 16 }}>
                   {isF ? <UserCheck size={16} /> : <UserPlus size={16} />} {isF ? "Obunadasiz" : "Obuna bo'lish"}
