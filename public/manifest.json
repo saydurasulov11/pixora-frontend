@@ -1,0 +1,13 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "sardogram",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "sardor",
+  "start_url": "/",
+  "theme_color": "#ffffff",
+  "description": "sardorsolo",
+  "id": "/"
+}
